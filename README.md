@@ -54,4 +54,5 @@ If this option is set, the script will not copy any files necessary to boot hori
 
 `sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --emummc -f "/home/user/downloads/Atmosphere.zip"`  
 
-__You can not have both, L4T Ubuntu and Android Oreo on the same SD card. Android will fail to boot.__
+__As of now, you can not have both, L4T Ubuntu and Android Oreo on the same SD card. Android will fail to boot.__ This may eventually change with the next L4T Ubuntu Release.
+The script may fail if you are using an internal SD card reader. Will be fixed soonTM.
