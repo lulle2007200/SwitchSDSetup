@@ -11,7 +11,7 @@ sudo ./setup.sh
 ## Optional command line options  
 ### --android [value]  
 Value can be  
-- a path to an Android Oreo image named android-xxGb.img.  
+- a path to an Android Oreo image named android-xxgb.img.  
 - a path to a folder containing Android Pie images (boot.img, system.img, vendor.img, tegra210-icosa.dtb,recovery.img or twrp.img). If twrp.img is present it will get prioritized over recovery.img.  
 - partitions-only. If value is partitions-only, the script will create partitions with a default size for Android Pie.  
 f the path contains spaces, put it in double quotes.  
