@@ -48,6 +48,6 @@ When --no-ui is set, you must provide a device using --device.
 If this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).  
 
 ## Usage example:  
-sudo ./setup.sh  
-sudo ./setup.sh --android "/home/user/downloads/android-16Gb.img" --l4t "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --f "/home/user/downloads/Atmosphere.zip"  
-sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/switch_android/pie/build" --l4t partitions-only --emummc -f "/home/user/downloads/Atmosphere.zip"  
+`sudo ./setup.sh`  
+`sudo ./setup.sh --android "/home/user/downloads/android-16Gb.img" --l4t "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --f "/home/user/downloads/Atmosphere.zip"`  
+`sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/switch_android/pie/build" --l4t partitions-only --emummc -f "/home/user/downloads/Atmosphere.zip"`  
