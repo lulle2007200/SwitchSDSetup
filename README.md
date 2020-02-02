@@ -9,7 +9,7 @@ When there is free space left on the SD card, you can extend each partition indi
 sudo ./setup.sh  
 
 ## Optional command line options  
-### --android '[value]'  
+### --android [value]  
 Value can be  
 - a path to an Android Oreo image named android-xxGb.img.  
 - a path to a folder containing Android Pie images (boot.img, system.img, vendor.img, tegra210-icosa.dtb,recovery.img or twrp.img). If twrp.img is present it will get prioritized over recovery.img.  
@@ -17,16 +17,16 @@ Value can be
 f the path contains spaces, put it in double quotes.  
 If you dont provide this option, the script will ask you, wether or not to add partitions for Android Pie.  
 	
-### --l4t '[value]'  
+### --l4t [value]  
 Value can be  
 - a path to an Ubuntu L4T image named switchroot-l4t-ubuntu-xxxx-xx-xx.img.  
 - partitions-only. If value is partitions-only, the script will create partitions with a default size for L4T Ubuntu.  
 If the path contains spaces, put it in double quotes.  
 If you dont provide this option, the script will ask you, wether or to add partitions for L4T Ubuntu.  
 
-### --f '[value]'  
+### --f [value]  
 Value can be  
-- a path to a zip file. The content of the provided zip file will get copied to the data partition (hos_data) automatically. Use --f '[value]' multiple times to add more than one zip file.  
+- a path to a zip file. The content of the provided zip file will get copied to the data partition (hos_data) automatically. Use --f [value] multiple times to add more than one zip file.  
 Use this option to automatically copy files (e.g. Atmosphere CFW, homebrew, etc.) to the data partition.  
 If the path contains spaces, put it in double quotes.  
 
@@ -34,7 +34,7 @@ If the path contains spaces, put it in double quotes.
 If this option set, The script will create a partition for an EmuMMC.  
 If you dont set this options, the script will ask you, wether or not to add an EmuMMC partition.  
 
-### --device '[value]'  
+### --device [value]  
 Value can be  
 - The path to the device you want to use.  
 If you dont provide this option, the script will list all available storage devices. You can choose the device you want to use.  
