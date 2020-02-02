@@ -49,5 +49,7 @@ If this option is set, the script will not copy any files necessary to boot hori
 
 ## Usage example:  
 `sudo ./setup.sh`  
+
 `sudo ./setup.sh --android "/home/user/downloads/android-16Gb.img" --l4t "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --f "/home/user/downloads/Atmosphere.zip"`  
+
 `sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/switch_android/pie/build" --l4t partitions-only --emummc -f "/home/user/downloads/Atmosphere.zip"`  
