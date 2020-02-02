@@ -1,22 +1,5 @@
 #!/bin/bash
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-if [[ $(id -u) -ne 0 ]] ; then echo "Please run as root" ; exit 1 ; fi
-
-declare -a AvailableDevices
-declare Device
 declare Size
 
 declare -a Partitions
@@ -26,18 +9,15 @@ declare -a MBRPartitions
 
 declare -a PostPartCmds
 
-declare L4TImg
-declare L4T=0
+declare -a StartFiles
+declare -a AdditionalStartFiles
 
-declare AndroidImg
-declare Android=0
+declare Input
 
-declare Emummc=0
 
-declare hos_data_sz_default=$((100*1024*1024))
+declare hos_data_sz_default=$((500*1024*1024))
 
-declare l4t_1_sz_default=$((500*1024*1024))
-declare l4t_2_sz_default=$((10*1024*1024*1024))
+declare l4t_sz_default=$((10*1024*1024*1024))
 
 declare emummc_sz_default=$((29844*1024*1024))
 
@@ -50,67 +30,178 @@ declare mda_sz_default=$((16*1024*1024))
 declare cac_sz_default=$((700*1024*1024))
 declare uda_sz_default=$((1*1024*1024*1024))
 
-#select storage device
-mapfile -t -s 1 AvailableDevices < <(lsblk -d -p -e 1,7 -o NAME)
+declare Help="Optional command line options\n \
+--android '[value]'\n \
+\tValue can be\n \
+\t- a path to an Android Oreo image named android-xxGb.img.\n \
+\t- a path to a folder containing Android Pie images (boot.img, system.img, vendor.img, tegra210-icosa.dtb, recovery.img or twrp.img). If twrp.img is present it will get prioritized over recovery.img.\n \
+\t- partitions-only. If value is partitions-only, the script will create partitions with a default size for Android Pie.\n \
+\tIf the path contains spaces, put it in double quotes.\n \
+\tIf you dont provide this option, the script will ask you, wether or not to add partitions for Android Pie.\n \
+\n \
+--l4t '[value]'\n \
+\tValue can be\n \
+\t- a path to an Ubuntu L4T image named switchroot-l4t-ubuntu-xxxx-xx-xx.img.\n \
+\t- partitions-only. If value is partitions-only, the script will create partitions with a default size for L4T Ubuntu.\n \
+\tIf the path contains spaces, put it in double quotes.\n \
+\tIf you dont provide this option, the script will ask you, wether or to add partitions for L4T Ubuntu.\n \
+\n \
+--f '[value]'\n \
+\tValue can be\n \
+\t- a path to a zip file. The content of the provided zip file will get copied to the data partition (hos_data) automatically. Use --f '[value]' multiple times to add more than one zip file.\n \
+\tUse this option to automatically copy files (e.g. Atmosphere CFW, homebrew, etc.) to the data partition.\n \
+\tIf the path contains spaces, put it in double quotes.\n \
+\n \
+--emummc\n \
+\tIf this option set, The script will create a partition for an EmuMMC.\n \
+\tIf you dont set this options, the script will ask you, wether or not to add an EmuMMC partition.\n \
+\n \
+--device '[value]'\n \
+\tValue can be\n \
+\t- The path to the device you want to use.\n \
+\tIf you dont provide this option, the script will list all available storage devices. You can choose the device you want to use.\n \
+\n \
+Advanced options:\n \
+--no-ui\n \
+\tIf this option is set, there will be no user interaction. THERE WILL BE NO WARNING ABOUT DATALOSS. YOU WILL NOT BE ASKED, IF YOU WANT TO CONTINUE, BEFORE THE DEVICE IS FORMATTED.\n \
+\tWhen --no-ui is set, you must provide a device using --device.\n \
+\n \
+--no-startfiles\n \
+\tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n"
 
-lsblk -d -e 1,7 -p -o NAME,TRAN,SIZE | awk 'NR==1{print("    "$0);}NR>1{print("["NR-2"]"$0);}'
 
-if ((${#AvailableDevices[@]} < 1))
+if expr match "$1" "--help" > 0
 	then
-	echo "No Storage devices found, aborting"
+	echo -e "$Help"
 	exit
 fi
 
-while :
-do
-	read -p "Choose device: " Device
-	if  expr match "$Device" "^[0-9]*$" > 0 && (($Device >= 0)) && (($Device < ${#AvailableDevices[@]}))
-		then
-		Device=${AvailableDevices[$Device]}
-		break
-	fi
-	echo "Enter a valid number"
+while (($# > 0))
+	do
+	declare Option="$1"
+	
+	case $Option in
+		--help)
+			echo -e "$Help"
+			exit
+		;;
+		--f)
+			if expr match "$2" "^.*[.]zip$" > 0 && test -f "$2"
+				then
+				AdditionalStartFiles=("${AdditionalStartFiles[@]}" "$2")
+			else
+				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+			fi
+			shift 
+			shift
+		;;
+		--no-startfiles)
+			declare NoStartfiles=1
+			shift
+		;;
+		--no-ui)
+			declare NoUi=1
+			shift
+		;;
+		--android)
+			if expr match "$2" "^.*android-[1-9][0-9]*gb[.]img$" > 0 && test -f "$2"
+				then
+				declare AndroidImg=$2
+				declare Android=1
+			elif test -d "${2}" && test -f "${2}/boot.img" && test -f "${2}/vendor.img" && test -f "${2}/system.img" && (test -f "${2}/tegra210-icosa.dtb" || test -f "${2}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb") && (test -f "${2}/recovery.img" || test -f "${2}/twrp.img")
+				then
+				declare AndroidImg=$2
+				declare Android=2
+			elif expr match "$2" "^partitions-only$" > 0
+				then
+				declare Android=3
+			else
+				echo "Invalid option:\"${1} ${2}\" Ignoring it."
+			fi
+			shift
+			shift
+		;;
+		--l4t)
+			if expr match "${2}" ".*switchroot-l4t-ubuntu-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][.]img$" > 0 && test -f "${2}"
+				then
+				declare L4TImg=$2
+				declare L4T=1
+			elif expr match "${2}" "^partitions-only$" > 0
+				then
+				declare L4T=2
+			else
+				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+			fi
+			shift
+			shift
+		;;
+		--emummc)
+			declare Emummc=1
+			shift
+		;;
+		--device)
+			if test -b "${2}"
+				then
+				declare Device=$2
+			else
+				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+			fi
+			shift
+			shift
+		;;	
+		*)
+			echo "Unknown option: \"${1}\" Ignoring it."
+			shift
+		;;
+	esac
 done
+
+if [[ $(id -u) -ne 0 ]] ; then echo "Please run as root" ; exit 1 ; fi
+
+if [[ $NoUi ]] && [[ -z $Device ]]
+	then
+	echo "Ui disabled, but no device provided. Aborting"
+	exit
+fi	
+	
+if [[ -z $Device ]]
+	then
+	declare -a AvailableDevices
+	mapfile -t -s 1 AvailableDevices < <(lsblk -d -p -e 1,7 -o NAME)
+
+	lsblk -d -e 1,7 -p -o NAME,TRAN,SIZE | awk 'NR==1{print("    "$0);}NR>1{print("["NR-2"]"$0);}'
+
+	if ((${#AvailableDevices[@]} < 1))
+		then
+		echo "No Storage devices found, aborting"
+		exit
+	fi
+
+	while :
+	do
+		read -p "Choose device: " Device
+		if  expr match "$Device" "^[0-9]*$" > 0 && (($Device >= 0)) && (($Device < ${#AvailableDevices[@]}))
+			then
+			Device=${AvailableDevices[$Device]}
+			break
+		fi
+		echo "Enter a valid number"
+	done
+else
+	echo "Selected device: $Device"
+fi
 
 Size=$(($(lsblk -b -n -d -o SIZE "$Device")-2*1024*1024))
 
 
-#evaluate arguments
-if [ -n "$1" ]
-	then
-	if expr match "$1" ".*switchroot-l4t-ubuntu-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].img$" > 0 && test -f "$1"
-		then
-		L4TImg=$1
-	elif test -d "$1" && test -f "${1}/system.img" && test -f "${1}/vendor.img" && test -f "${1}/boot.img" && (test -f "${1}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb" || test -f "${1}/tegra210-icosa.dtb") && (test -f "${1}/recovery.img" || test -f "${1}/twrp.img")
-		then
-		AndroidImg=$1
-	else
-		echo "First argument is invalid, ignoring it."
-	fi
-fi
-if [ -n "$2" ]
-	then 
-	if expr match "$2" ".*switchroot-l4t-ubuntu-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].img$" > 0 && test -f "$2"
-		then
-		L4TImg=$2
-		
-	elif test -d "$2" && test -f "${2}/system.img" && test -f "${2}/vendor.img" && test -f "${2}/boot.img" && (test -f "${2}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb" || test -f "${2}/tegra210-icosa.dtb") 
-		then
-		AndroidImg=$2
-	else
-		echo "Second argument is invalid, ignoring it."
-	fi
-fi
-
 #add hos data partition
 Partitions=(${Partitions[@]} $hos_data_sz_default)
 Size=$(($Size-$hos_data_sz_default))
-
-PartitionNames=(${PartitionNames[@]} "hos_data")
-PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "Data")
-MBRPartitions=(${MBRPartitions[@]} ${#Partitions[@]})
-
+PartitionNames=("${PartitionNames[@]}" "hos_data")
+PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Data")
+MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
 PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
+StartFiles=("${StartFiles[@]}" "./StartFiles/HOSStockStartFiles.zip" "./StartFiles/Hekate.zip")
 
 if (($Size < 0))
 	then
@@ -118,98 +209,225 @@ if (($Size < 0))
 	exit
 fi
 
-#add L4T partition
-if [[ $L4TImg ]]
+#add android partitions
+if [[ -z $NoUi ]] && [[ -z $Android ]]
 	then
-	read -p "Found L4T Ubuntu image. Create partitions for L4T Ubuntu and copy the image? ([Y]es/[N]o): " L4T
-	if  expr match "$L4T" "^[yY]$">0
+	read -p "Create Partitions for Android Pie? ([Y]es/[N]o): " Input
+	if expr match "$Input" "^[yY]$">0
 		then
-		L4T=1
+		declare Android=3
+	fi
+fi 
 
-		declare -a StartSectors
-		declare -a PartitionSizes
-		declare temp
-		
-		declare PartTable=$(sfdisk -d "${L4TImg}")
+if [[ $Android ]] && (( $Android==3 ))
+	then
+	Partitions=("${Partitions[@]}" $vendor_sz_default $app_sz_default $lnx_sz_default $sos_sz_default $dtb_sz_default $mda_sz_default $cac_sz_default $uda_sz_default)
+	PartitionNames=("${PartitionNames[@]}" "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android vendor" "Android system" "Android kernel" "Android recovery" "Android DTB" "Android meta data" "Android cache" "Android user data")
+	Size=$(($Size-$vendor_sz_default-$app_sz_default-$lnx_sz_default-$sos_sz_default-$dtb_sz_default-$mda_sz_default-$cac_sz_default-$uda_sz_default))
 
-		mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>5 && (NF-1)>0){print int($ (NF-1));}}')
-		mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>5 && (NF-3)>0){print int($ (NF-3));}}')
+	if (( $Size<0 ))
+		then
+		echo "Storage device too small, aborting"
+	fi
+elif [[ $Android ]] &&  (( $Android==2 ))
+	then
+	echo "Found Android Pie image, creating partitions for it"
+	StartFiles=("${StartFiles[@]}" "./StartFiles/AndroidPieStartFiles.zip")
+	
+	declare android_boot_img=${AndroidImg}/boot.img
 
-		
-		temp=$(((${PartitionSizes[0]}+2047)/2048*2048*512))
-		
-		if (($temp>${Partitions[0]}))
-			then
-			Size=$(($Size-$temp+${Partitions[0]}))
-			Partitions[0]=$temp
-		fi
-		
-		temp=$(((${PartitionSizes[1]}+2047)/2048*2048*512))
-		
-		Size=$(($Size-$temp))
-		if (($Size<0))
-			then
-			echo "Storage device too small, aborting."
-			exit
-		fi
-		
-		Partitions=(${Partitions[@]} $temp)
-		PartitionNames=(${PartitionNames[@]} "l4t")
-		PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "Linux4Tegra")
-
-		MBRPartitions=(${MBRPartitions[@]} ${#Partitions[@]})
-
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}1 skip=${StartSectors[0]} count=${PartitionSizes[0]} status=progress" "dd bs=512 if=\"$L4TImg\" of=${Device}${L4TPartition} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")		
+	if test -f "${AndroidImg}/tegra210-icosa.dtb" 
+		then
+		declare android_dtb_img=${AndroidImg}/tegra210-icosa.dtb
 	else
-		L4T=0
+		declare android_dtb_img=${AndroidImg}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb
 	fi
-	
-else
-	echo "No L4T Ubuntu image provided"
-	L4T=0
-fi
 
-if ((L4T != 1))
-	then
-	read -p "Create partitions for L4T Ubuntu anyways? ([Y]es/[N]o): " L4T
-	if  expr match "$L4T" "^[yY]$">0
+	if test -f "${AndroidImg}/twrp.img"
 		then
-		L4T=1
+		android_recovery_img=${AndroidImg}/twrp.img			
+	else
+		android_recovery_img=${AndroidImg}/recovery.img
+	fi
 
-		if (($l4t_1_sz_default>${Partitions[0]}))
-			then
-			Size=$(($Size-$l4t_1_sz_default+${Partitions[0]}))
-			Partitions[0]=$l4t_1_sz_default
-		fi
-		Size=$(($Size-$l4t_2_sz_default))
+	echo "Converting Android sparse images to raw images. This may take a while."
 
-		if (($Size<0))
-			then
-			echo "Storage device too small, aborting."
-			exit
-		fi
-		Partitions=(${Partitions[@]} $l4t_2_sz_default)
-		PartitionNames=(${PartitionNames[@]} "l4t")
-		PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "Linux4Tegra")
+	./simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
+	declare android_vendor_img=${AndroidImg}/vendor.raw.img
+
+	./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
+	declare android_system_img=${AndroidImg}/system.raw.img
+
 		
-		MBRPartitions=(${MBRPartitions[@]} ${#Partitions[@]})
+	declare temp
 
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	temp=$(( ($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_vendor_img\" of=${Device}${#Partitions[@]} status=progress")
+	
+	temp=$(( ($(stat -c%s "$android_system_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_system_img\" of=${Device}${#Partitions[@]} status=progress")
+
+	temp=$(( ($(stat -c%s "$android_boot_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_boot_img\" of=${Device}${#Partitions[@]} status=progress")
+
+	temp=$(( ($(stat -c%s "$android_recovery_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_recovery_img\" of=${Device}${#Partitions[@]} status=progress")
+
+	temp=$(( ($(stat -c%s "$android_dtb_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_dtb_img\" of=${Device}${#Partitions[@]} status=progress")
+
+	Partitions=("${Partitions[@]}" $mda_sz_default)
+	Size=$(($Size-$mda_sz_default))
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+
+	Partitions=("${Partitions[@]}" $cac_sz_default)
+	Size=$(($Size-$cac_sz_default))
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+
+	Partitions=("${Partitions[@]}" $uda_sz_default)
+	Size=$(($Size-$uda_sz_default))
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+
+	PartitionNames=("${PartitionNames[@]}" "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Pie vendor" "Android Pie system" "Android Pie boot" "Android Pie recovery" "Android Pie DTB" "Android Pie MDA" "Android Pie cache" "Android Pie user data")
+
+	if (($Size < 0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi		
+elif [[ $Android ]] && (( $Android==1 ))
+	then
+	echo "Found Android Oreo image, creating partitions for it"
+
+	declare -a PartitionSizes
+	declare -a StartSectors
+	declare -a Names
+
+	declare PartTable=$(sfdisk -d "${AndroidImg}")
+
+	declare PartTableStartLine=$(echo "$PartTable" | awk '{if(!NF){print NR}}')
+
+	mapfile -t Names < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+	mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
+	mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-5)>0){print int($ (NF-5));}}')
+	
+	for ((i=1;i<(${#Names[@]}-1);i++))
+		do
+		temp=$(( (${PartitionSizes[$i]}+2047)/2048*2048*512 ))
+		Size=$(($Size-$temp))
+		Partitions=("${Partitions[@]}" "$temp")
+		PartitionNames=("${PartitionNames[@]}" "${Names[$i]}")
+		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[$i]}")
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$AndroidImg\" of=${Device}${#Partitions[@]} status=progress skip=${StartSectors[$i]} count=${PartitionSizes[$i]}")
+	done
+	Size=$(($Size-$uda_sz_default))
+	Partitions=("${Partitions[@]}" "$uda_sz_default")
+	PartitionNames=("${PartitionNames[@]}" "${Names[${#Names[@]}-1]}")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[${#Names[@]}-1]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	
+	temp=$((${StartSectors[0]}*512))
+	
+	if [[ -z $NoStartfiles ]]
+		then
+			PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+	fi
+
+	if (($Size < 0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi
+	
+fi
+
+#add L4T partition
+if [[ -z $NoUi ]] && [[ -z $L4T ]]
+	then
+	read -p "Create partitions for L4T Ubuntu? ([Y]es/[N]o): " Input
+	if expr match "$Input" "^[yY]$" > 0
+		then
+		L4T=2
+	fi
+fi
+
+if [[ $L4T ]] && (( $L4T==1 ))
+	then
+	echo "Found L4T Ubuntu Image. Creating Partitions for it."
+	declare -a StartSectors
+	declare -a PartitionSizes
+	declare temp
+	
+	declare PartTable=$(sfdisk -d "${L4TImg}")
+	
+	mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>5 && (NF-1)>0){print int($ (NF-1));}}')
+	mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>5 && (NF-3)>0){print int($ (NF-3));}}')
+
+	temp=$((${StartSectors[0]}*512))
+	PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+
+	temp=$(((${PartitionSizes[1]}+2047)/2048*2048*512))	
+	Size=$(($Size-$temp))
+
+	Partitions=("${Partitions[@]}" $temp)
+	PartitionNames=("${PartitionNames[@]}" "l4t")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")
+	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
+
+	if (($Size<0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi
+
+elif [[ $L4T ]] && (( $L4T==2 ))
+	then
+	Size=$(($Size-$l4t_sz_default))
+
+	if (($Size<0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi
+
+	Partitions=("${Partitions[@]}" $l4t_sz_default)
+	PartitionNames=("${PartitionNames[@]}" "l4t")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")		
+	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+fi
+
+	
+#add emummc partition
+if [[ -z $NoUi ]] && [[ -z $Emummc ]]
+	then
+	read -p "Create EmuMMC parition ([Y]es/[N]o): " Input
+	if  expr match "$Input" "^[yY]$">0
+		then
+		declare Emummc=1
 	fi
 fi
 	
-#add emummc partition	
-read -p "Create EmuMMC parition ([Y]es/[N]o): " Emummc
-if  expr match "$Emummc" "^[yY]$">0
+
+if [[ $Emummc ]] && (( $Emummc==1 ))
 	then
-	Emummc=1
-
-	Partitions=(${Partitions[@]} $emummc_sz_default)
-	PartitionNames=(${PartitionNames[@]} "emummc")
-	PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "EmuMMC")
-	
-	MBRPartitions=(${MBRPartitions[@]} ${#Partitions[@]})
-
+	Partitions=("${Partitions[@]}" $emummc_sz_default)
+	PartitionNames=("${PartitionNames[@]}" "emummc")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "EmuMMC")
+	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
 
 	Size=$(($Size-$emummc_sz_default))
@@ -218,185 +436,46 @@ if  expr match "$Emummc" "^[yY]$">0
 		echo "Storage device too small, aborting."
 		exit
 	fi
-	
-else
-	Emummc=0
-fi
-
-#add android partitions
-if [[ $AndroidImg ]]
-	then
-	read -p "Found Android image. Create partitions for Android and copy the image? ([Y]es/[N]o): " Android
-	if  expr match "$Android" "^[yY]$">0
-		then
-		Android=1
-
-		declare AndroidPartition=$((${#Partitions[@]}+1))
-
-		echo "Converting Android sparse images to raw images."
-
-		declare android_boot_img=${AndroidImg}/boot.img
-
-		./simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
-		declare android_vendor_img=${AndroidImg}/vendor.raw.img
-
-		./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
-		declare android_system_img=${AndroidImg}/system.raw.img
-
-		declare android_dtb_img
-		if test -f "${AndroidImg}/tegra210-icosa.dtb" 
-			then
-			android_dtb_img=${AndroidImg}/tegra210-icosa.dtb
-		else
-			android_dtb_img=${AndroidImg}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb
-		fi
-
-		declare android_recovery_img
-		if test -f "${AndroidImg}/twrp.img"
-			then
-			android_recovery_img=${AndroidImg}/twrp.img			
-		else
-			android_recovery_img=${AndroidImg}/recovery.img
-		fi
-		
-		declare temp
-
-		temp=$(( ($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-		Size=$(($Size-$temp))
-		Partitions=(${Partitions[@]} $temp)
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_vendor_img\" of=${Device}${#Partitions[@]} status=progress")
-		echo "${PostPartCmds[$((${#PostPartCmds[@]}-1))]}"
-		
-		temp=$(( ($(stat -c%s "$android_system_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-		Size=$(($Size-$temp))
-		Partitions=(${Partitions[@]} $temp)
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_system_img\" of=${Device}${#Partitions[@]} status=progress")
-
-		temp=$(( ($(stat -c%s "$android_boot_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-		Size=$(($Size-$temp))
-		Partitions=(${Partitions[@]} $temp)
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_boot_img\" of=${Device}${#Partitions[@]} status=progress")
-
-		temp=$(( ($(stat -c%s "$android_recovery_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-		Size=$(($Size-$temp))
-		Partitions=(${Partitions[@]} $temp)
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_recovery_img\" of=${Device}${#Partitions[@]} status=progress")
-
-		temp=$(( ($(stat -c%s "$android_dtb_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-		Size=$(($Size-$temp))
-		Partitions=(${Partitions[@]} $temp)
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_dtb_img\" of=${Device}${#Partitions[@]} status=progress")
-
-		Partitions=(${Partitions[@]} $mda_sz_default)
-		Size=$(($Size-$mda_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $cac_sz_default)
-		Size=$(($Size-$cac_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $uda_sz_default)
-		Size=$(($Size-$uda_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		PartitionNames=(${PartitionNames[@]} "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
-		PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "Android vendor" "Android system" "Android boot" "Android recovery" "Android DTB" "Android MDA" "Android cache" "Android user data")
-
-		if (($Size < 0))
-			then
-			echo "Storage device too small, aborting."
-			exit
-		fi		
-	else
-		Android=0
-	fi
-else
-	echo "No Android image provided."
-	Android=0
-fi
-
-if ((Android != 1))
-	then
-	read -p "Create partitions for Android anyways? ([Y]es/[N]o): " Android
-	if  expr match "$Android" "^[yY]$">0
-		then
-		Android=1
-
-		Partitions=(${Partitions[@]} $vendor_sz_default)
-		Size=$(($Size-$vendor_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $app_sz_default)
-		Size=$(($Size-$app_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $lnx_sz_default)
-		Size=$(($Size-$lnx_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $sos_sz_default)
-		Size=$(($Size-$sos_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")	
-
-		Partitions=(${Partitions[@]} $dtb_sz_default)
-		Size=$(($Size-$dtb_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $mda_sz_default)
-		Size=$(($Size-$mda_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $cac_sz_default)
-		Size=$(($Size-$cac_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		Partitions=(${Partitions[@]} $uda_sz_default)
-		Size=$(($Size-$uda_sz_default))
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
-
-		PartitionNames=(${PartitionNames[@]} "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
-		PartitionFriendlyNames=(${PartitionFriendlyNames[@]} "Android vendor" "Android system" "Android boot" "Android recovery" "Android DTB" "Android MDA" "Android cache" "Android user data")
-		
-		if (($Size < 0))
-			then
-			echo "Storage device too small, aborting."
-			exit
-		fi
-	fi
 fi
 
 #Adjust partition sizes
-declare temp
-declare SizeInMb=$(($Size/1024/1024))
-declare PartSizeInMb
-echo "Adjust partition sizes, currently unused space: ${SizeInMb}Mb. All remaining free space will get assigned to the data partition."
-for ((i=1;i<${#Partitions[@]};i++)) 
-	do
-	SizeInMb=$(($Size/1024/1024))
-	PartSizeInMb=$((${Partitions[$i]}/1024/1024))
-	while :
+
+if [[ -z $NoUi ]]
+	then
+	declare temp
+	declare SizeInMb=$(($Size/1024/1024))
+	declare PartSizeInMb
+	echo "Adjust partition sizes, currently unused space: ${SizeInMb}Mb. All remaining free space will get assigned to the data partition."
+	for ((i=1;i<${#Partitions[@]};i++)) 
 		do
-		read -p "Extend ${PartitionFriendlyNames[$i]} partition (currently ${PartSizeInMb}Mb) by 0-${SizeInMb}Mb: " temp
-		if  expr match "$temp" "^[0-9]*$" > 0 && (($temp >= 0)) && (($temp <= $Size*1024*1024))
-			then
-			Size=$(($Size-($temp*1024*1024)))
-			Partitions[$i]=$((${Partitions[$i]}+($temp*1024*1024)))
-			break
-		fi
-		echo "Enter a valid number."
+		SizeInMb=$(($Size/1024/1024))
+		PartSizeInMb=$((${Partitions[$i]}/1024/1024))
+		while :
+			do
+			read -p "Extend ${PartitionFriendlyNames[$i]} partition (currently ${PartSizeInMb}Mb) by 0-${SizeInMb}Mb: " temp
+			if  expr match "$temp" "^[0-9]*$" > 0 && (($temp >= 0)) && (($temp <= $Size*1024*1024))
+				then
+				Size=$(($Size-($temp*1024*1024)))
+				Partitions[$i]=$((${Partitions[$i]}+($temp*1024*1024)))
+				break
+			fi
+			echo "Enter a valid number."
+		done
 	done
-done
+fi
 
 Partitions[0]=$((${Partitions[0]}+$Size))
 Size=0
 
-
-declare temp
-read -p "Storage device will be formatted. All data will be lost. Continue? ([Y]es/[N]o): " temp
-if  (($(expr match "$temp" "^[yY]$")==0))
+if [[ -z $NoUi ]]
 	then
-	echo "Aborting."
-	exit
+	declare temp
+	read -p "Storage device will be formatted. All data will be lost. Continue? ([Y]es/[N]o): " temp
+	if  (($(expr match "$temp" "^[yY]$")==0))
+		then
+		echo "Aborting."
+		exit
+	fi
 fi
 
 for n in "${Device}*"
@@ -436,23 +515,17 @@ for ((Cmd=0;Cmd<${#PostPartCmds[@]};Cmd++))
 	eval "${PostPartCmds[$Cmd]}"
 done
 
+if [[ -z $NoStartfiles ]]
+	then
+	AdditionalStartFiles=("${StartFiles[@]}" "${AdditionalStartFiles[@]}")
+fi
+mkdir -p "./DataPartitionMount"
+mount "${Device}1" "./DataPartitionMount"
+for ((i=0;i<${#AdditionalStartFiles[@]};i++))
+	do
+	unzip -o "${AdditionalStartFiles[$i]}" -d "./DataPartitionMount"
+done
+umount "${Device}1"
+rmdir "./DataPartitionMount"
+
 echo "Done."
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
