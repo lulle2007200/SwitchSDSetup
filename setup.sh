@@ -88,12 +88,7 @@ Advanced options:\n \
 --no-startfiles\n \
 \tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n"
 
-
-if expr match "$1" "--help" > 0
-	then
-	echo -e "$Help"
-	exit
-fi
+echo "SwitchSDSetup Script - use --help for a list of available options.\nMore information here:  github.com/lulle2007200/SwitchSDSetup\n\n"
 
 while (($# > 0))
 	do
@@ -226,64 +221,6 @@ if (($Size < 0))
 	then
 	echo "Storage device too small, aborting."
 	exit
-fi
-
-#add L4T partition
-if [[ -z $NoUi ]] && [[ -z $L4T ]]
-	then
-	read -p "Create partitions for L4T Ubuntu? ([Y]es/[N]o): " Input
-	if expr match "$Input" "^[yY]$" > 0
-		then
-		L4T=2
-	fi
-fi
-
-if [[ $L4T ]] && (( $L4T==1 ))
-	then
-	echo "Found L4T Ubuntu Image. Create partitions for it and copy the image."
-	declare -a StartSectors
-	declare -a PartitionSizes
-	declare temp
-	
-	declare PartTable=$(sfdisk -d "${L4TImg}")
-	
-	mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>5 && (NF-1)>0){print int($ (NF-1));}}')
-	mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>5 && (NF-3)>0){print int($ (NF-3));}}')
-
-	temp=$((${StartSectors[0]}*512))
-	PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
-
-	temp=$(((${PartitionSizes[1]}+2047)/2048*2048*512))	
-	Size=$(($Size-$temp))
-
-	Partitions=("${Partitions[@]}" $temp)
-	PartitionNames=("${PartitionNames[@]}" "l4t")
-	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")
-	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
-
-	if (($Size<0))
-		then
-		echo "Storage device too small, aborting."
-		exit
-	fi
-
-elif [[ $L4T ]] && (( $L4T==2 ))
-	then
-	echo "Creating partitions for L4T ubuntu"
-	Size=$(($Size-$l4t_sz_default))
-
-	if (($Size<0))
-		then
-		echo "Storage device too small, aborting."
-		exit
-	fi
-
-	Partitions=("${Partitions[@]}" $l4t_sz_default)
-	PartitionNames=("${PartitionNames[@]}" "l4t")
-	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")		
-	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
 fi
 
 #add android partitions
@@ -429,6 +366,65 @@ elif [[ $Android ]] && (( $Android==1 ))
 		exit
 	fi
 	
+fi
+
+#add L4T partition
+if [[ -z $NoUi ]] && [[ -z $L4T ]]
+	then
+	read -p "Create partitions for L4T Ubuntu? ([Y]es/[N]o): " Input
+	if expr match "$Input" "^[yY]$" > 0
+		then
+		L4T=2
+	fi
+fi
+
+if [[ $L4T ]] && (( $L4T==1 ))
+	then
+	echo "Found L4T Ubuntu Image. Create partitions for it and copy the image."
+	declare -a StartSectors
+	declare -a PartitionSizes
+	declare temp
+	
+	declare PartTable=$(sfdisk -d "${L4TImg}")
+	
+	mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>5 && (NF-1)>0){print int($ (NF-1));}}')
+	mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>5 && (NF-3)>0){print int($ (NF-3));}}')
+
+	temp=$(((${PartitionSizes[1]}+2047)/2048*2048*512))	
+	Size=$(($Size-$temp))
+
+	Partitions=("${Partitions[@]}" $temp)
+	PartitionNames=("${PartitionNames[@]}" "l4t")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")
+	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+
+	temp=$((${StartSectors[0]}*512))
+	PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
+
+	if (($Size<0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi
+
+elif [[ $L4T ]] && (( $L4T==2 ))
+	then
+	echo "Creating partitions for L4T ubuntu"
+	Size=$(($Size-$l4t_sz_default))
+
+	if (($Size<0))
+		then
+		echo "Storage device too small, aborting."
+		exit
+	fi
+
+	Partitions=("${Partitions[@]}" $l4t_sz_default)
+	PartitionNames=("${PartitionNames[@]}" "l4t")
+	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")		
+	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
 fi
 
 #add emummc partition
