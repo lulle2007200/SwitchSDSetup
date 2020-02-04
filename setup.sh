@@ -28,6 +28,8 @@ declare -a MBRPartitions
 
 declare -a PostPartCmds
 
+declare PartPrefix=""
+
 declare -a StartFiles
 declare -a AdditionalStartFiles
 
@@ -205,8 +207,12 @@ else
 	echo "Selected device: $Device"
 fi
 
-Size=$(($(lsblk -b -n -d -o SIZE "$Device")-2*1024*1024))
+if expr match "$Device" "^.*[0-9][0-9]*$" > 0
+	then
+	PartPrefix="p"
+fi
 
+Size=$(($(lsblk -b -n -d -o SIZE "$Device")-2*1024*1024))
 
 #add hos data partition
 Partitions=(${Partitions[@]} $hos_data_sz_default)
@@ -214,7 +220,7 @@ Size=$(($Size-$hos_data_sz_default))
 PartitionNames=("${PartitionNames[@]}" "hos_data")
 PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Data")
 MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
+PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
 StartFiles=("${StartFiles[@]}" "./StartFiles/HOSStockStartFiles.zip" "./StartFiles/Hekate.zip")
 
 if (($Size < 0))
@@ -275,45 +281,44 @@ elif [[ $Android ]] &&  (( $Android==2 ))
 	./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
 	declare android_system_img=${AndroidImg}/system.raw.img
 
-		
 	declare temp
 
 	temp=$(( ($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_vendor_img\" of=${Device}${#Partitions[@]} status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_vendor_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
 	
 	temp=$(( ($(stat -c%s "$android_system_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_system_img\" of=${Device}${#Partitions[@]} status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_system_img\" of=$${PartPrefix}{Device}${#Partitions[@]} status=progress")
 
 	temp=$(( ($(stat -c%s "$android_boot_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_boot_img\" of=${Device}${#Partitions[@]} status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_boot_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
 
 	temp=$(( ($(stat -c%s "$android_recovery_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_recovery_img\" of=${Device}${#Partitions[@]} status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_recovery_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
 
 	temp=$(( ($(stat -c%s "$android_dtb_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$android_dtb_img\" of=${Device}${#Partitions[@]} status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_dtb_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
 
 	Partitions=("${Partitions[@]}" $mda_sz_default)
 	Size=$(($Size-$mda_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
 
 	Partitions=("${Partitions[@]}" $cac_sz_default)
 	Size=$(($Size-$cac_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
 
 	Partitions=("${Partitions[@]}" $uda_sz_default)
 	Size=$(($Size-$uda_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
 
 	if [[ $TWRP ]] && (( $TWRP==1 ))
 		then
@@ -351,19 +356,19 @@ elif [[ $Android ]] && (( $Android==1 ))
 		Partitions=("${Partitions[@]}" "$temp")
 		PartitionNames=("${PartitionNames[@]}" "${Names[$i]}")
 		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[$i]}")
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$AndroidImg\" of=${Device}${#Partitions[@]} status=progress skip=${StartSectors[$i]} count=${PartitionSizes[$i]}")
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$AndroidImg\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress skip=${StartSectors[$i]} count=${PartitionSizes[$i]}")
 	done
 	Size=$(($Size-$uda_sz_default))
 	Partitions=("${Partitions[@]}" "$uda_sz_default")
 	PartitionNames=("${PartitionNames[@]}" "${Names[${#Names[@]}-1]}")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[${#Names[@]}-1]}")
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
 	
 	temp=$((${StartSectors[0]}*512))
 	
 	if [[ -z $NoStartfiles ]]
 		then
-		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
 	fi
 
 	if (($Size < 0))
@@ -407,10 +412,10 @@ if [[ $L4T ]] && (( $L4T==1 ))
 	temp=$((${StartSectors[0]}*512))
 	if [[ -z $NoStartfiles ]]
 		then
-		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
 	fi
 
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${PartPrefix}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
 
 	if (($Size<0))
 		then
@@ -433,7 +438,7 @@ elif [[ $L4T ]] && (( $L4T==2 ))
 	PartitionNames=("${PartitionNames[@]}" "l4t")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")		
 	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
 fi
 
 #add emummc partition
@@ -453,7 +458,7 @@ if [[ $Emummc ]] && (( $Emummc==1 ))
 	PartitionNames=("${PartitionNames[@]}" "emummc")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "EmuMMC")
 	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
 
 	Size=$(($Size-$emummc_sz_default))
 	if (($Size < 0))
