@@ -88,7 +88,7 @@ Advanced options:\n \
 --no-startfiles\n \
 \tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n"
 
-echo "SwitchSDSetup Script - use --help for a list of available options.\nMore information here:  github.com/lulle2007200/SwitchSDSetup\n\n"
+echo -e "SwitchSDSetup Script - use --help for a list of available options.\nMore information here:  github.com/lulle2007200/SwitchSDSetup\n"
 
 while (($# > 0))
 	do
@@ -104,7 +104,7 @@ while (($# > 0))
 				then
 				AdditionalStartFiles=("${AdditionalStartFiles[@]}" "$2")
 			else
-				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+				echo "Invalid path: \"${2}\" Make sure, the path is correct and points to a .zip file. Ignoring argument."
 			fi
 			shift 
 			shift
@@ -130,7 +130,7 @@ while (($# > 0))
 				then
 				declare Android=3
 			else
-				echo "Invalid option:\"${1} ${2}\" Ignoring it."
+				echo "Invalid option:\"${2}\" If its a path, make sure that it is correct. Ignoring argument."
 			fi
 			shift
 			shift
@@ -144,7 +144,7 @@ while (($# > 0))
 				then
 				declare L4T=2
 			else
-				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+				echo "Invalid option: \"${2}\" If it is a path, make sure that it is correct. Ignoring argument"
 			fi
 			shift
 			shift
@@ -158,13 +158,13 @@ while (($# > 0))
 				then
 				declare Device=$2
 			else
-				echo "Invalid option: \"${1} ${2}\" Ignoring it."
+				echo "Device \"${2}\" is not a block device. Ignoring argument."
 			fi
 			shift
 			shift
 		;;	
 		*)
-			echo "Unknown option: \"${1}\" Ignoring it."
+			echo "Unknown option: \"${1}\" Ignoring argument."
 			shift
 		;;
 	esac
@@ -261,6 +261,7 @@ elif [[ $Android ]] &&  (( $Android==2 ))
 
 	if test -f "${AndroidImg}/twrp.img"
 		then
+		declare TWRP=1
 		android_recovery_img=${AndroidImg}/twrp.img			
 	else
 		android_recovery_img=${AndroidImg}/recovery.img
@@ -314,6 +315,11 @@ elif [[ $Android ]] &&  (( $Android==2 ))
 	Size=$(($Size-$uda_sz_default))
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}")
 
+	if [[ $TWRP ]] && (( $TWRP==1 ))
+		then
+		StartFiles=("${StartFiles[@]}" "./StartFiles/TWRPBootScr.zip")
+	fi
+
 	PartitionNames=("${PartitionNames[@]}" "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Pie vendor" "Android Pie system" "Android Pie boot" "Android Pie recovery" "Android Pie DTB" "Android Pie MDA" "Android Pie cache" "Android Pie user data")
 
@@ -357,7 +363,7 @@ elif [[ $Android ]] && (( $Android==1 ))
 	
 	if [[ -z $NoStartfiles ]]
 		then
-			PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
 	fi
 
 	if (($Size < 0))
@@ -399,7 +405,10 @@ if [[ $L4T ]] && (( $L4T==1 ))
 	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
 
 	temp=$((${StartSectors[0]}*512))
-	PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+	if [[ -z $NoStartfiles ]]
+		then
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+	fi
 
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
 
