@@ -14,7 +14,7 @@ Value can be
 - a path to an Android Oreo image named android-xxgb.img.  
 - a path to a folder containing Android Pie images (boot.img, system.img, vendor.img, tegra210-icosa.dtb,recovery.img or twrp.img). If twrp.img is present it will get prioritized over recovery.img.  
 - partitions-only. If value is partitions-only, the script will create partitions with a default size for Android Pie.  
-f the path contains spaces, put it in double quotes.  
+If the path contains spaces, put it in double quotes.  
 If you dont provide this option, the script will ask you, wether or not to add partitions for Android Pie.  
 	
 ### --l4t [value]  
@@ -54,5 +54,4 @@ If this option is set, the script will not copy any files necessary to boot hori
 
 `sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --emummc -f "/home/user/downloads/Atmosphere.zip"`  
 
-__As of now, you can not have both, L4T Ubuntu and Android Oreo on the same SD card. Android will fail to boot.__ This may eventually change with the next L4T Ubuntu Release.
 The script may fail if you are using an internal SD card reader. Will be fixed soonTM.
