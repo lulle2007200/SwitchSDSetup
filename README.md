@@ -53,5 +53,3 @@ If this option is set, the script will not copy any files necessary to boot hori
 `sudo ./setup.sh --android "/home/user/downloads/android-16Gb.img" --l4t partitions-only --f "/home/user/downloads/Atmosphere.zip"`  
 
 `sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --emummc -f "/home/user/downloads/Atmosphere.zip"`  
-
-The script may fail if you are using an internal SD card reader. Will be fixed soonTM.
