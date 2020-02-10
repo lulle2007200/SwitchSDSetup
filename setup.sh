@@ -170,11 +170,6 @@ while (($# > 0))
 				then
 				declare L4TImg=$2
 				declare L4T=1
-				declare ImgDate=$(echo "$2"|grep -Eo '[[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}')
-				if [[ "2020-02-05" > $ImgDate ]]
-					then
-					declare PatchBootSCR=1
-				fi
 			elif expr match "${2}" "^partitions-only$" > 0
 				then
 				declare L4T=2
@@ -311,7 +306,7 @@ if [[ $Android ]] || [[ $L4T ]] || (( ${#AdditionalStartFiles[@]}>0 ))
 		fi
 	fi
 	if [[ $Android ]] && (( $Android==1 ))
-		then		
+		then	
 		declare AndroidPartTable=$(sfdisk -d "${AndroidImg}")
 
 		declare AndroidPartTableStartLine=$(echo "$AndroidPartTable" | awk '{if(!NF){print NR}}')
@@ -342,12 +337,12 @@ if [[ $Android ]] || [[ $L4T ]] || (( ${#AdditionalStartFiles[@]}>0 ))
 		then
 		declare -a AndroidPiePartNames=("vendor" "LNX" "SOS" "DTB" "APP")
 		declare -a AndroidPieImages=("$android_vendor_img" "$android_boot_img" "$android_recovery_img" "$android_dtb_img" "$android_system_img")
-
-		for ((i=0;i<${#AndroidPieNames[@]};i++))
+		
+		for ((i=0;i<${#AndroidPiePartNames[@]};i++))
 			do
 			for ((j=0;j<${#SDPartNames[@]};j++))
 				do
-				if test ${SDPartNames[$j]} = ${AndroidPiePartNames[$i]}
+				if test ${SDPartNames[$j]} = ${AndroidPiePartNames[$i]}	
 					then
 					if (( ${SDPartitionSizes[$j]} < (($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024)/512) ))
 						then
@@ -452,6 +447,7 @@ elif [[ $Android ]] &&  (( $Android==2 ))
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+	PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 	
 	FileSize=$(stat -c%s "$android_system_img")
 	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
@@ -465,8 +461,9 @@ elif [[ $Android ]] &&  (( $Android==2 ))
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+	PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 
-	FileSize=$(stat -c%s "$android_system_img")
+	FileSize=$(stat -c%s "$android_boot_img")
 	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
@@ -621,24 +618,23 @@ if [[ $L4T ]] && (( $L4T==1 ))
 	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
 
 	temp=$((${StartSectors[0]}*512))
-	if [[ -z $NoStartfiles ]]
-		then
-		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/")
-		if [[ $PatchBootSCR ]]		
-			then
-		  	PostPartCmds=("${PostPartCmds[@]}" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch")
-		fi
-		PostPartCmds=("${PostPartCmds[@]}" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
-	fi
 
 	PartNo=${#Partitions[@]}
 	if [[ $NoFormat ]]
 		then
 		PartNo=$L4T_part
 	fi
+
+	if [[ -z $NoStartfiles ]]
+		then
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+		StartFiles=("${StartFiles[@]}" "./StartFiles/bootp${PartNo}.zip")
+	fi
+	
 	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} iflag=skip_bytes skip=$((${StartSectors[1]}*512)) count=$((${PartitionSizes[1]}/2048)) status=progress")	
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
 	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} skip=$(( (${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048)) )) count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 
 	if (($Size<0))
 		then
