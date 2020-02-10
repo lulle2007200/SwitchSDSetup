@@ -39,6 +39,10 @@ Value can be
 - The path to the device you want to use.  
 If you dont provide this option, the script will list all available storage devices. You can choose the device you want to use.  
 
+### --no-format
+If this option is set, the script will not format the SD card and instead only flashes the provided images/files. The necessary Partitions must already present and big enough.  
+Not compatible with --l4t partitions-only, --emummc and --android partitions-only.  
+
 ## Advanced options:  
 ### --no-ui  
 If this option is set, there will be no user interaction. THERE WILL BE NO WARNING ABOUT DATALOSS. YOU WILL NOT BE ASKED, IF YOU WANT TO CONTINUE, BEFORE THE DEVICE IS FORMATTED.  

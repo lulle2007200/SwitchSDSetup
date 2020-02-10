@@ -88,7 +88,9 @@ Advanced options:\n \
 \tWhen --no-ui is set, you must provide a device using --device.\n \
 \n \
 --no-startfiles\n \
-\tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n"
+\tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n \
+--no-format\n \
+\tIf this option is set, the script will not format the SD card and instead just flash the provided files. Required partitions must already be present and large enough."
 
 echo -e "SwitchSDSetup Script - use --help for a list of available options.\nMore information here:  github.com/lulle2007200/SwitchSDSetup\n"
 
@@ -128,6 +130,32 @@ while (($# > 0))
 				then
 				declare AndroidImg=$2
 				declare Android=2
+
+				declare android_boot_img="${AndroidImg}/boot.img"
+				
+				if test -f "${AndroidImg}/tegra210-icosa.dtb" 
+					then
+					declare android_dtb_img="${AndroidImg}/tegra210-icosa.dtb"
+				else
+					declare android_dtb_img="${AndroidImg}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb"
+				fi
+
+				if test -f "${AndroidImg}/twrp.img"
+					then
+					declare TWRP=1
+					android_recovery_img="${AndroidImg}/twrp.img"
+				else
+					android_recovery_img="${AndroidImg}/recovery.img"
+				fi
+
+				echo "Converting Android sparse images to raw images. This may take a while."
+
+				./simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
+				declare android_vendor_img=${AndroidImg}/vendor.raw.img
+
+				./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
+				declare android_system_img=${AndroidImg}/system.raw.img
+
 			elif expr match "$2" "^partitions-only$" > 0
 				then
 				declare Android=3
@@ -142,6 +170,11 @@ while (($# > 0))
 				then
 				declare L4TImg=$2
 				declare L4T=1
+				declare ImgDate=$(echo "$2"|grep -Eo '[[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}')
+				if [[ "2020-02-05" > $ImgDate ]]
+					then
+					declare PatchBootSCR=1
+				fi
 			elif expr match "${2}" "^partitions-only$" > 0
 				then
 				declare L4T=2
@@ -164,7 +197,15 @@ while (($# > 0))
 			fi
 			shift
 			shift
-		;;	
+		;;
+		--no-format)
+			declare NoFormat=1
+			shift
+		;;
+		--fix-mbr)
+			declare FixMbr=1
+			shift
+		;;
 		*)
 			echo "Unknown option: \"${1}\" Ignoring argument."
 			shift
@@ -172,13 +213,20 @@ while (($# > 0))
 	esac
 done
 
-if [[ $(id -u) -ne 0 ]] ; then echo "Please run as root" ; exit 1 ; fi
-
 if [[ $NoUi ]] && [[ -z $Device ]]
 	then
 	echo "Ui disabled, but no device provided. Aborting"
 	exit
-fi	
+fi
+
+if [[ $NoFormat ]] && ( ( [[ $Android ]] && (( $Android==3)) )  || ( [[ $L4T ]] && (( $L4T==3)) ) || ( [[ $Emummc ]] && (( $Android==1)) ))
+	then
+	echo "no-format and l4t=partitions-only / android=partitions-only are incompatible. Aborting"
+fi
+
+if [[ $(id -u) -ne 0 ]] ; then echo "Please run as root" ; exit 1 ; fi
+
+	
 	
 if [[ -z $Device ]]
 	then
@@ -214,13 +262,137 @@ fi
 
 Size=$(($(lsblk -b -n -d -o SIZE "$Device")-2*1024*1024))
 
+if [[ $Android ]] || [[ $L4T ]] || (( ${#AdditionalStartFiles[@]}>0 ))
+	then
+
+	declare temp=1	
+	
+	declare SDPartTable=$(sfdisk -d "${Device}")
+
+	declare SDPartTableStartLine=$(echo "$SDPartTable" | awk '{if(!NF){print NR}}')
+
+	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+	mapfile -t SDPartitionSizes < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
+
+	if test ${SDPartNames[0]} = "hos_data"
+		then
+		if (( ${SDPartitionSizes[0]} < ($hos_data_sz_default/512) ))
+			then
+			temp=0
+		fi
+	fi
+			
+	
+	if [[ $L4T ]] && (( $L4T==1 ))
+		then
+		for ((i=0;i<${#SDPartNames[@]};i++))
+			do
+			if test "l4t" = "${SDPartNames[$i]}"
+				then
+				declare L4TPartTable=$(sfdisk -d "${L4TImg}")
+
+				declare L4TPartTableStartLine=$(echo "$L4TPartTable" | awk '{if(!NF){print NR}}')
+		
+				mapfile -t L4TPartitionSizes < <(echo "$L4TPartTable" | awk '{if (NR>$L4TPartTableStartLine && (NF-1)>0){print int($ (NF-1));}}')
+
+				if (( ${SDPartitionSizes[$i]} < $(((${L4TPartitionSizes[1]}+2047)/2048*2048)) ))
+					then
+					temp=0	
+					break
+				else
+					declare L4T_part=$(($i+1))
+					break
+				fi
+			fi
+		done
+		if [[ -z $L4T_part ]]
+			then
+			temp=0
+		fi
+	fi
+	if [[ $Android ]] && (( $Android==1 ))
+		then		
+		declare AndroidPartTable=$(sfdisk -d "${AndroidImg}")
+
+		declare AndroidPartTableStartLine=$(echo "$AndroidPartTable" | awk '{if(!NF){print NR}}')
+
+		mapfile -t AndroidPartNames < <(echo "$AndroidPartTable" | awk '{if (NR>$PartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+		mapfile -t AndroidPartitionSizes < <(echo "$AndroidPartTable" | awk '{if (NR>$PartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
+
+		for ((j=1;j<${#AndroidPartNames[@]}-1;j++))
+			do
+			for ((i=0;i<${#SDPartNames[@]};i++))
+				do
+				if test ${AndroidPartNames[$j]} = ${SDPartNames[$i]}
+					then
+					if (( ${SDPartitionSizes[$i]} < $(((${AndroidPartitionSizes[$j]}+2047)/2048*2048)) ))
+						then
+						temp=0
+						break 2
+					else
+						eval declare ${AndroidPartNames[$j]}_part=$(($i+1))
+					fi
+					continue 2
+				fi
+			done
+			temp=0
+			break
+		done
+	elif [[ $Android ]] && (( $Android==2 ))
+		then
+		declare -a AndroidPiePartNames=("vendor" "LNX" "SOS" "DTB" "APP")
+		declare -a AndroidPieImages=("$android_vendor_img" "$android_boot_img" "$android_recovery_img" "$android_dtb_img" "$android_system_img")
+
+		for ((i=0;i<${#AndroidPieNames[@]};i++))
+			do
+			for ((j=0;j<${#SDPartNames[@]};j++))
+				do
+				if test ${SDPartNames[$j]} = ${AndroidPiePartNames[$i]}
+					then
+					if (( ${SDPartitionSizes[$j]} < (($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024)/512) ))
+						then
+						temp=0
+						break 2
+					else
+						eval declare ${AndroidPiePartNames[$i]}_part=$(($j+1))
+					fi
+					continue 2
+				fi
+			done
+			temp=0
+			break
+		done
+	fi
+	if (( $temp==0 )) && [[ $NoFormat ]]
+		then
+		echo "no-format option set, but the required partitions are not present. Aborting"
+		exit
+	elif [[ -z $NoUi ]] && (( $temp==1 ))
+		then
+		read -p "Partitions for the provided files are already present on the SD card. Flash the provided images without formatting the SD card? ([Y]es/[N]o): " Input
+		if expr match "$Input" "^[yY]$">0
+			then
+			declare NoFormat=1
+		fi
+	fi
+		
+elif [[ $NoFormat ]]
+	then
+	echo "no-format option set, but no files to flash provided. Aborting."
+	exit
+fi
+
 #add hos data partition
+
 Partitions=(${Partitions[@]} $hos_data_sz_default)
 Size=$(($Size-$hos_data_sz_default))
 PartitionNames=("${PartitionNames[@]}" "hos_data")
 PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Data")
 MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
+if [[ -z $NoFormat ]]
+	then
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
+fi
 StartFiles=("${StartFiles[@]}" "./StartFiles/HOSStockStartFiles.zip" "./StartFiles/Hekate.zip")
 
 if (($Size < 0))
@@ -230,7 +402,7 @@ if (($Size < 0))
 fi
 
 #add android partitions
-if [[ -z $NoUi ]] && [[ -z $Android ]]
+if [[ -z $NoUi ]] && [[ -z $Android ]] && [[ -z $NoFormat ]]
 	then
 	read -p "Create Partitions for Android Pie? ([Y]es/[N]o): " Input
 	if expr match "$Input" "^[yY]$">0
@@ -254,77 +426,101 @@ if [[ $Android ]] && (( $Android==3 ))
 elif [[ $Android ]] &&  (( $Android==2 ))
 	then
 	echo "Found Android Pie image, create partitions for it and copy the image."
-	StartFiles=("${StartFiles[@]}" "./StartFiles/AndroidPieStartFiles.zip")
 	
-	declare android_boot_img=${AndroidImg}/boot.img
-
-	if test -f "${AndroidImg}/tegra210-icosa.dtb" 
+	if [[ -z $NoStartfiles ]]
 		then
-		declare android_dtb_img=${AndroidImg}/tegra210-icosa.dtb
-	else
-		declare android_dtb_img=${AndroidImg}/obj/KERNEL_OBJ/arch/arm64/boot/dts/tegra210-icosa.dtb
-	fi
-
-	if test -f "${AndroidImg}/twrp.img"
+		StartFiles=("${StartFiles[@]}" "./StartFiles/AndroidPieStartFiles.zip")
+		if [[ $TWRP ]] && (( $TWRP==1 ))
 		then
-		declare TWRP=1
-		android_recovery_img=${AndroidImg}/twrp.img			
-	else
-		android_recovery_img=${AndroidImg}/recovery.img
+			StartFiles=("${StartFiles[@]}" "./StartFiles/TWRPBootScr.zip")
+		fi
 	fi
-
-	echo "Converting Android sparse images to raw images. This may take a while."
-
-	./simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
-	declare android_vendor_img=${AndroidImg}/vendor.raw.img
-
-	./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
-	declare android_system_img=${AndroidImg}/system.raw.img
 
 	declare temp
-
-	temp=$(( ($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-	Size=$(($Size-$temp))
-	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_vendor_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
+	declare FileSize
+	declare PartNo
 	
-	temp=$(( ($(stat -c%s "$android_system_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	FileSize=$(stat -c%s "$android_vendor_img")
+	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
 	Size=$(($Size-$temp))
 	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_system_img\" of=$${PartPrefix}{Device}${#Partitions[@]} status=progress")
-
-	temp=$(( ($(stat -c%s "$android_boot_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-	Size=$(($Size-$temp))
-	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_boot_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
-
-	temp=$(( ($(stat -c%s "$android_recovery_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-	Size=$(($Size-$temp))
-	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_recovery_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
-
-	temp=$(( ($(stat -c%s "$android_dtb_img")+(1024*1024-1))/(1024*1024)*(1024*1024) ))
-	Size=$(($Size-$temp))
-	Partitions=("${Partitions[@]}" $temp)
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$android_dtb_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress")
-
-	Partitions=("${Partitions[@]}" $mda_sz_default)
-	Size=$(($Size-$mda_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
-
-	Partitions=("${Partitions[@]}" $cac_sz_default)
-	Size=$(($Size-$cac_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
-
-	Partitions=("${Partitions[@]}" $uda_sz_default)
-	Size=$(($Size-$uda_sz_default))
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
-
-	if [[ $TWRP ]] && (( $TWRP==1 ))
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
 		then
-		StartFiles=("${StartFiles[@]}" "./StartFiles/TWRPBootScr.zip")
+		PartNo=$vendor_part
 	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+	
+	FileSize=$(stat -c%s "$android_system_img")
+	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
+		then
+		PartNo=$APP_part
+	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
 
+	FileSize=$(stat -c%s "$android_system_img")
+	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
+		then
+		PartNo=$LNX_part
+
+	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_boot_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_boot_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+
+	FileSize=$(stat -c%s "$android_recovery_img")
+	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
+		then
+		PartNo=$SOS_part
+	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_recovery_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_recovery_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+
+	FileSize=$(stat -c%s "$android_dtb_img")
+	temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+	Size=$(($Size-$temp))
+	Partitions=("${Partitions[@]}" $temp)
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
+		then
+		PartNo=$DTB_part
+	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_dtb_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_dtb_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+	
+	if [[ -z $NoFormat ]]
+		then
+		Partitions=("${Partitions[@]}" $mda_sz_default)
+		Size=$(($Size-$mda_sz_default))
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
+
+		Partitions=("${Partitions[@]}" $cac_sz_default)
+		Size=$(($Size-$cac_sz_default))
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
+
+		Partitions=("${Partitions[@]}" $uda_sz_default)
+		Size=$(($Size-$uda_sz_default))
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
+	fi
+	
 	PartitionNames=("${PartitionNames[@]}" "vendor" "APP" "LNX" "SOS" "DTB" "MDA" "CAC" "UDA")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Pie vendor" "Android Pie system" "Android Pie boot" "Android Pie recovery" "Android Pie DTB" "Android Pie MDA" "Android Pie cache" "Android Pie user data")
 
@@ -348,6 +544,8 @@ elif [[ $Android ]] && (( $Android==1 ))
 	mapfile -t Names < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 	mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
 	mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-5)>0){print int($ (NF-5));}}')
+
+	declare PartNo
 	
 	for ((i=1;i<(${#Names[@]}-1);i++))
 		do
@@ -356,13 +554,24 @@ elif [[ $Android ]] && (( $Android==1 ))
 		Partitions=("${Partitions[@]}" "$temp")
 		PartitionNames=("${PartitionNames[@]}" "${Names[$i]}")
 		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[$i]}")
-		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$AndroidImg\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress skip=${StartSectors[$i]} count=${PartitionSizes[$i]}")
+		PartNo=${#Partitions[@]}
+		if [[ $NoFormat ]]
+			then
+			eval PartNo=\$${Names[$i]}_part
+		fi
+		
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$AndroidImg\" of=${Device}${PartPrefix}${PartNo} status=progress iflag=skip_bytes skip=$((${StartSectors[$i]}*512)) count=$((${PartitionSizes[$i]}/2048))")
+		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} status=progress count=$((${PartitionSizes[$i]}-(${PartitionSizes[$i]}/2048*2048))) seek=$((${PartitionSizes[$i]}/2048*2048))")
+		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$AndroidImg\" of=${Device}${PartPrefix}${PartNo} seek=$((${PartitionSizes[$i]}/2048*2048)) status=progress skip=$((${StartSectors[$i]}+(${PartitionSizes[$i]}/2048*2048))) count=$((${PartitionSizes[$i]}-(${PartitionSizes[$i]}/2048*2048)))")
 	done
 	Size=$(($Size-$uda_sz_default))
 	Partitions=("${Partitions[@]}" "$uda_sz_default")
 	PartitionNames=("${PartitionNames[@]}" "${Names[${#Names[@]}-1]}")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Android Oreo ${Names[${#Names[@]}-1]}")
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
+	if [[ -z $NoFormat ]]
+		then
+		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}")
+	fi
 	
 	temp=$((${StartSectors[0]}*512))
 	
@@ -380,7 +589,7 @@ elif [[ $Android ]] && (( $Android==1 ))
 fi
 
 #add L4T partition
-if [[ -z $NoUi ]] && [[ -z $L4T ]]
+if [[ -z $NoUi ]] && [[ -z $L4T ]] && [[ -z $NoFormat ]]
 	then
 	read -p "Create partitions for L4T Ubuntu? ([Y]es/[N]o): " Input
 	if expr match "$Input" "^[yY]$" > 0
@@ -395,6 +604,8 @@ if [[ $L4T ]] && (( $L4T==1 ))
 	declare -a StartSectors
 	declare -a PartitionSizes
 	declare temp
+
+	declare PartNo
 	
 	declare PartTable=$(sfdisk -d "${L4TImg}")
 	
@@ -412,10 +623,22 @@ if [[ $L4T ]] && (( $L4T==1 ))
 	temp=$((${StartSectors[0]}*512))
 	if [[ -z $NoStartfiles ]]
 		then
-		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+		PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$L4TImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -R -f ./LoopDeviceMount/. ./DataPartitionMount/")
+		if [[ $PatchBootSCR ]]		
+			then
+		  	PostPartCmds=("${PostPartCmds[@]}" "patch ./DataPartitionMount/l4t-ubuntu/boot.scr ./Patches/bootp${#Partitions[@]}.patch")
+		fi
+		PostPartCmds=("${PostPartCmds[@]}" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
 	fi
 
-	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${#Partitions[@]}" "dd bs=512 if=\"$L4TImg\" of=${Device}${PartPrefix}${#Partitions[@]} skip=${StartSectors[1]} count=${PartitionSizes[1]} status=progress")	
+	PartNo=${#Partitions[@]}
+	if [[ $NoFormat ]]
+		then
+		PartNo=$L4T_part
+	fi
+	PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} iflag=skip_bytes skip=$((${StartSectors[1]}*512)) count=$((${PartitionSizes[1]}/2048)) status=progress")	
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
+	PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} skip=$(( (${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048)) )) count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
 
 	if (($Size<0))
 		then
@@ -442,7 +665,7 @@ elif [[ $L4T ]] && (( $L4T==2 ))
 fi
 
 #add emummc partition
-if [[ -z $NoUi ]] && [[ -z $Emummc ]]
+if [[ -z $NoUi ]] && [[ -z $Emummc ]] && [[ -z $NoFormat ]]
 	then
 	read -p "Create EmuMMC parition ([Y]es/[N]o): " Input
 	if  expr match "$Input" "^[yY]$">0
@@ -470,7 +693,7 @@ fi
 
 #Adjust partition sizes
 
-if [[ -z $NoUi ]]
+if [[ -z $NoUi ]] && [[ -z $NoFormat ]]
 	then
 	declare temp
 	declare SizeInMb=$(($Size/1024/1024))
@@ -497,7 +720,7 @@ fi
 Partitions[0]=$((${Partitions[0]}+$Size))
 Size=0
 
-if [[ -z $NoUi ]]
+if [[ -z $NoUi ]] && [[ -z $NoFormat ]]
 	then
 	declare temp
 	read -p "Storage device will be formatted. All data will be lost. Continue? ([Y]es/[N]o): " temp
@@ -513,32 +736,40 @@ for n in "${Device}*"
 	umount $n
 done
 
-parted $Device --script mklabel gpt
-for ((i=0; i<${#Partitions[@]}; i++)) 
-	do
-	sgdisk -n $(($i+1)):0:+$((${Partitions[$i]}/1024))K $Device
-	sgdisk -c $(($i+1)):${PartitionNames[$i]} $Device
-done
-
-declare Gdisk_cmd="r\nh\n"
-for ((i=0;i<${#MBRPartitions[@]};i++))
-	do
-	Gdisk_cmd="${Gdisk_cmd}${MBRPartitions[$i]} "
-done
-Gdisk_cmd="${Gdisk_cmd}\nN\n"
-for ((i=0;i<${#MBRPartitions[@]};i++))
-	do
-	Gdisk_cmd="${Gdisk_cmd}0C\nN\n"
-done
-if ((${#MBRPartitions[@]}<3))
+if [[ -z $NoFormat ]]
 	then
-	Gdisk_cmd="${Gdisk_cmd}N\n"
+	parted $Device --script mklabel gpt
+	for ((i=0; i<${#Partitions[@]}; i++)) 
+		do
+		sgdisk -n $(($i+1)):0:+$((${Partitions[$i]}/1024))K $Device
+		sgdisk -c $(($i+1)):${PartitionNames[$i]} $Device
+	done
+
+	declare Gdisk_cmd="r\nh\n"
+	for ((i=0;i<${#MBRPartitions[@]};i++))
+		do
+		Gdisk_cmd="${Gdisk_cmd}${MBRPartitions[$i]} "
+	done
+	Gdisk_cmd="${Gdisk_cmd}\nN\n"
+	for ((i=0;i<${#MBRPartitions[@]};i++))
+		do
+		Gdisk_cmd="${Gdisk_cmd}0C\nN\n"
+	done
+	if ((${#MBRPartitions[@]}<3))
+		then
+		Gdisk_cmd="${Gdisk_cmd}N\n"
+	fi
+	Gdisk_cmd="${Gdisk_cmd}w\nY\n"
+
+	printf "${Gdisk_cmd}" | gdisk $Device
+
+	partprobe
 fi
-Gdisk_cmd="${Gdisk_cmd}w\nY\n"
 
-printf "${Gdisk_cmd}" | gdisk $Device
-
-partprobe
+for ((Cmd=0;Cmd<${#PostPartCmds[@]};Cmd++))
+	do
+	echo  "${PostPartCmds[$Cmd]}"
+done
 
 for ((Cmd=0;Cmd<${#PostPartCmds[@]};Cmd++))
 	do
@@ -549,6 +780,7 @@ if [[ -z $NoStartfiles ]]
 	then
 	AdditionalStartFiles=("${StartFiles[@]}" "${AdditionalStartFiles[@]}")
 fi
+
 mkdir -p "./DataPartitionMount"
 mount "${Device}1" "./DataPartitionMount"
 for ((i=0;i<${#AdditionalStartFiles[@]};i++))
