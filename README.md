@@ -5,6 +5,12 @@ You can provide an Android and/or a L4t Ubuntu image with the command line optio
 You can also choose to add a partition for EmuMMC.  
 When there is free space left on the SD card, you can extend each partition individually (realistically though you would only want to extend the L4T, Android user data and maybe the android system partition), all remaining free space will get assigned to the data partition.  
 
+## Requirements
+- Linux distribution of your choice with bash, live CD/USB stick is sufficient
+- the following programs must be installed (usually installed by default):
+- gdisk, fdisk, sgdisk, sfdisk, parted, dd, mount, umount, losetup, awk, rm, rmdir, resize2fs, stat, mkfs.vfat, mkfs.ext4, unzip, printf, cp, echo, test, expr, partprobe
+
+
 ## Basic usage:  
 sudo ./setup.sh  
 
@@ -49,7 +55,10 @@ If this option is set, there will be no user interaction. THERE WILL BE NO WARNI
 When --no-ui is set, you must provide a device using --device.  
 
 ### --no-startfiles  
-If this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).  
+If this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).
+
+### --fix-mbr
+If this option is set, the script will fix the hybrid mbr on the SD card. Doesn't work with any other option.
 
 ## Usage example:  
 `sudo ./setup.sh`  
@@ -57,3 +66,5 @@ If this option is set, the script will not copy any files necessary to boot hori
 `sudo ./setup.sh --android "/home/user/downloads/android-16Gb.img" --l4t partitions-only --f "/home/user/downloads/Atmosphere.zip"`  
 
 `sudo ./setup.sh --no-ui --device "dev/sdb" --android "/home/user/downloads/switchroot-l4t-ubuntu-2020-01-21.img" --emummc -f "/home/user/downloads/Atmosphere.zip"`  
+
+`sudo ./setup.sh --fix-mbr`
