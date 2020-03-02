@@ -180,7 +180,7 @@ while (($# > 0))
 			shift
 		;;
 		--l4t)
-			if expr match "${2}" ".*switchroot-l4t-ubuntu-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][.]img$" > 0 && test -f "${2}"
+			if expr match "${2}" ".*switchroot-l4t-ubuntu.*-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][.]img$" > 0 && test -f "${2}"
 				then
 				declare L4TImg=$2
 				declare L4T=1
