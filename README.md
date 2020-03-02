@@ -12,7 +12,9 @@ When there is free space left on the SD card, you can extend each partition indi
 
 
 ## Basic usage:  
-sudo ./setup.sh  
+sudo ./setup.sh
+
+If you cant run the script, add execute permission with `chmod +x setup.sh`.
 
 ## Optional command line options  
 ### --android [value]  
