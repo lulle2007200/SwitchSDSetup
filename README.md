@@ -16,6 +16,8 @@ sudo ./setup.sh
 
 If you cant run the script, add execute permission with `chmod +x setup.sh`.
 
+When you didn't download from release page, but cloned the repo instead, you need to build simg2img.
+
 ## Optional command line options  
 ### --android [value]  
 Value can be  
