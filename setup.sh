@@ -19,11 +19,18 @@
 #I take no responsibility if this script causes damage to your
 #device or dataloss (which it should not).
 
-declare -a Dependencies=("gdisk" "fdisk" "sgdisk" "sfdisk" "parted" "dd" "mount" "umount" "losetup" "awk" "rm" "rmdir" "resize2fs" "stat" "mkfs.vfat" "mkfs.ext4" "unzip" "printf" "cp" "echo" "test" "expr" "partprobe")
+declare -a Dependencies=("gdisk" "fdisk" "sgdisk" "sfdisk" "parted" "dd" "mount" "umount" "losetup" "awk" "rm" "rmdir" "resize2fs" "stat" "mkfs.vfat" "mkfs.ext4" "unzip" "printf" "cp" "echo" "test" "expr" "partprobe" "python3")
 for ((i=0;i<${#Dependencies[@]};i++))
 	do
-	command -v "${Dependencies[$i]}" >/dev/null 2>&1 || { echo >&2 "${Dependencies[$i]} required, but it's not installed."; declare CommandMissing=1; }
+	command -v "${Dependencies[$i]}" >/dev/null 2>&1 || { echo >&2 "${Dependencies[$i]} required, but not installed."; declare CommandMissing=1; }
 done
+
+if [[ -z $(python3 -c "import usb" 2>&1) ]]
+	then
+	echo "Python module python3-usb required, but not installed."
+	declare CommandMissing=1
+fi
+
 if [[ $CommandMissing ]]
 	then
 	echo "Some required tools are missing. Aborting"
@@ -164,10 +171,10 @@ while (($# > 0))
 
 				echo "Converting Android sparse images to raw images. This may take a while."
 
-				./simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
+				./Tools/simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
 				declare android_vendor_img=${AndroidImg}/vendor.raw.img
 
-				./simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
+				./Tools/simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
 				declare android_system_img=${AndroidImg}/system.raw.img
 
 			elif expr match "$2" "^partitions-only$" > 0
@@ -203,7 +210,7 @@ while (($# > 0))
 			shift
 		;;
 		--device)
-			if test -b "${2}"
+			if test -b "${2}" || [[ "${2}"=="switch" ]]
 				then
 				declare Device=$2
 			else
@@ -242,8 +249,69 @@ if [[ $(id -u) -ne 0 ]] ; then echo "Please run as root" ; exit 1 ; fi
 
 	
 	
-if [[ -z $Device ]]
+if [[ -z $Device ]] || [[ "$Device" == "switch" ]]
 	then
+	
+	if [[ $(lsusb -d 0955:7321) ]]
+		then
+		if [[ -z $NoUi ]]
+			then
+			read -p "Nintendo Switch in RCM mode detected, use the SD card that is currently inserted in the Switch? ([Y]es/[N]o)? " Input
+		else
+			Input="y"
+		fi
+		if expr match "$Input" "^[yY]$">0
+			then
+			declare NDevices=$(lsblk -d -p -e 1,7 -o NAME | awk 'END{print NR}')
+			declare -a AvailableDevices
+			mapfile -t -s 1 AvailableDevices < <(lsblk -d -p -e 1,7 -o NAME)
+
+			./Tools/shofel2/shofel2.py ./Tools/shofel2/cbfs.bin ./Tools/shofel2/SDLoader.rom > /dev/null 2>&1
+
+			declare Timeout=10
+			while ((1))
+				do
+				if (($(lsblk -d -p -e 1,7 -o NAME | awk 'END{print NR}') > $NDevices))
+					then
+					declare NewAvailableDevices
+					mapfile -t -s 1 NewAvailableDevices < <(lsblk -d -p -e 1,7 -o NAME)
+					
+					for ((i=0;i<${#NewAvailableDevices[@]};i++))
+						do
+						for ((j=0;j<${#AvailableDevices[@]};j++))
+							do
+							if [[ "${NewAvailableDevices[$i]}" == "${AvailableDevices[$j]}" ]]
+								then
+								continue 2
+							fi
+						done
+						Device=${NewAvailableDevices[$i]}
+						
+						break 2
+					done
+				fi
+
+				sleep 1
+				Timeout=$Timeout-1
+				if (($Timeout == 0))
+					then
+					echo "No SD card is inserted in the Switch or it can't be read. Aborting."
+					exit
+				fi
+			done
+		fi
+	else
+		if [[ $NoUi ]] && [[ "$Device" == "switch" ]]
+			then
+			echo "Switch specified as device to use, but no Switch in RCM mode found. Aborting."
+			exit
+		fi
+	fi
+fi
+
+if [[ -z $Device ]]			
+	then
+
 	declare -a AvailableDevices
 	mapfile -t -s 1 AvailableDevices < <(lsblk -d -p -e 1,7 -o NAME)
 
@@ -502,7 +570,7 @@ if [[ -z $FixMbr ]]
 		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_vendor_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
-		PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
+		PostPartCmds=("${PostPartCmds[@]}" "resize2fs -f ${Device}${PartPrefix}${PartNo}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 		
 		FileSize=$(stat -c%s "$android_system_img")
 		temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
@@ -516,7 +584,7 @@ if [[ -z $FixMbr ]]
 		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} count=$((${FileSize}/(1024*1024))) status=progress")
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$(((${temp}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$android_system_img\" of=${Device}${PartPrefix}${PartNo} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
-		PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
+		PostPartCmds=("${PostPartCmds[@]}" "resize2fs -f ${Device}${PartPrefix}${PartNo}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 
 		FileSize=$(stat -c%s "$android_boot_img")
 		temp=$(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
@@ -695,7 +763,7 @@ if [[ -z $FixMbr ]]
 		PostPartCmds=("${PostPartCmds[@]}" "mkfs.ext4 -F ${Device}${PartPrefix}${PartNo}" "dd oflag=sync bs=1M if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} iflag=skip_bytes skip=$((${StartSectors[1]}*512)) count=$((${PartitionSizes[1]}/2048)) status=progress")	
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${PartNo} count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
 		PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$L4TImg\" of=${Device}${PartPrefix}${PartNo} skip=$(( (${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048)) )) count=$((${PartitionSizes[1]}-(${PartitionSizes[1]}/2048*2048))) seek=$((${StartSectors[1]}+(${PartitionSizes[1]}/2048*2048))) status=progress")
-		PostPartCmds=("${PostPartCmds[@]}" "resize2fs ${Device}${PartPrefix}${PartNo}")
+		PostPartCmds=("${PostPartCmds[@]}" "e2fsck -f ${Device}${PartPrefix}${PartNo}" "resize2fs ${Device}${PartPrefix}${PartNo}")
 
 		if (($Size<0))
 			then
@@ -789,12 +857,12 @@ if [[ -z $FixMbr ]]
 			exit
 		fi
 	fi
-
-	for n in "${Device}*"
-		do 
-		umount $n
-	done
 fi
+
+for n in "${Device}*"
+	do 
+	umount $n
+done
 
 if [[ -z $NoFormat ]] && [[ -z $FixMbr ]]
 	then
@@ -855,5 +923,10 @@ if [[ -z $FixMbr ]]
 	umount "${Device}1"
 	rmdir "./DataPartitionMount"
 fi
+
+for n in "${Device}*"
+	do 
+	umount $n
+done
 
 echo "Done."

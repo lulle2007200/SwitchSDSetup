@@ -1,3 +1,6 @@
 [submodule "android-simg2img"]
 	path = android-simg2img
-	url = https://github.com/anestisb/android-simg2img.git
+	url = https://github.com/anestisb/android-simg2img
+[submodule "shofel2"]
+	path = shofel2
+	url = https://github.com/fail0verflow/shofel2
