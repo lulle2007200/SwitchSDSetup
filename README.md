@@ -3,7 +3,10 @@
 The script sets up the partitions in a way that the SD card remains usable with Horizon OS without the need to format it gain.  
 You can provide an Android and/or a L4t Ubuntu image with the command line options (see below) and the script will automatically set up partitions and copy the content of the images to the right partitions and the necessary files to boot the images to the data partition.  
 You can also choose to add a partition for EmuMMC.  
-When there is free space left on the SD card, you can extend each partition individually (realistically though you would only want to extend the L4T, Android user data and maybe the android system partition), all remaining free space will get assigned to the data partition.  
+When there is free space left on the SD card, you can extend each partition individually (realistically though you would only want to extend the L4T, Android user data and maybe the android system partition), all remaining free space will get assigned to the data partition. 
+You can connect a switch in rcm mode to the pc and the script can directly write to the SD card that is inserted into it  (aka use switch as SD card reader). No need to ever remove the SD card from your switch again.
+If doing so, you have to force power off the switch (hold power button for like 10s) after the script is done.
+
 
 ## Requirements
 - Linux distribution of your choice with bash, live CD/USB stick is sufficient
@@ -46,7 +49,8 @@ If you dont set this options, the script will ask you, wether or not to add an E
 
 ### --device [value]  
 Value can be  
-- The path to the device you want to use.  
+- The path to the device you want to use. 
+- switch. If value is switch, the script will try to use the SD card inserted into the switch in rcm mode connected to the pc. If no SD card is present in the connected switch or if no switch in rcm mode is found, the script will abort.
 If you dont provide this option, the script will list all available storage devices. You can choose the device you want to use.  
 
 ### --no-format
