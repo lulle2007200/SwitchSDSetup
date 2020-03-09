@@ -11,7 +11,7 @@ If doing so, you have to force power off the switch (hold power button for like 
 ## Requirements
 - Linux distribution of your choice with bash, live CD/USB stick is sufficient
 - the following programs must be installed (usually installed by default):
-- gdisk, fdisk, sgdisk, sfdisk, parted, dd, mount, umount, losetup, awk, rm, rmdir, resize2fs, stat, mkfs.vfat, mkfs.ext4, unzip, printf, cp, echo, test, expr, partprobe
+- gdisk, fdisk, sgdisk, sfdisk, parted, dd, mount, umount, losetup, awk, rm, rmdir, resize2fs, stat, mkfs.vfat, mkfs.ext4, unzip, printf, cp, echo, test, expr, partprobe, python3, python3-usb
 
 
 ## Basic usage:  
