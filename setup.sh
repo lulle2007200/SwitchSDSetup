@@ -356,8 +356,8 @@ if [[ $FixMbr ]]
 
 	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 
-	declare -a PartitionsToAddToMBR=("hos_data" "l4t" "emummc")
-	declare -a MBRCodesToAdd=("0C" "93" "1C")
+	declare -a PartitionsToAddToMBR=("hos_data" "emummc")
+	declare -a MBRCodesToAdd=("0C" "1C")
 	
 	for ((i=0;i<${#PartitionsToAddToMBR[@]};i++))
 		do
@@ -738,8 +738,8 @@ if [[ -z $FixMbr ]]
 		Partitions=("${Partitions[@]}" $temp)
 		PartitionNames=("${PartitionNames[@]}" "l4t")
 		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Linux4Tegra")
-		MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-		MBRCodes=("${MBRCodes[@]}" "93")
+		#MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+		#MBRCodes=("${MBRCodes[@]}" "93")
 
 		temp=$((${StartSectors[0]}*512))
 
