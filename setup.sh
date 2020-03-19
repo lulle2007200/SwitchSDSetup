@@ -25,7 +25,7 @@ for ((i=0;i<${#Dependencies[@]};i++))
 	command -v "${Dependencies[$i]}" >/dev/null 2>&1 || { echo >&2 "${Dependencies[$i]} required, but not installed."; declare CommandMissing=1; }
 done
 
-if [[ -z $(python3 -c "import usb" 2>&1) ]]
+if [[ $(python3 -c "import usb" 2>&1) ]]
 	then
 	echo "Python module python3-usb required, but not installed."
 	declare CommandMissing=1
@@ -465,7 +465,7 @@ if [[ -z $FixMbr ]]
 					do
 					if test ${SDPartNames[$j]} = ${AndroidPiePartNames[$i]}	
 						then
-						if (( ${SDPartitionSizes[$j]} < (($(stat -c%s "$android_vendor_img")+(1024*1024-1))/(1024*1024)*(1024*1024)/512) ))
+						if (( ${SDPartitionSizes[$j]} < (($(stat -c%s "${AndroidPieImages[$i]}")+(1024*1024-1))/(1024*1024)*(1024*1024)/512) ))
 							then
 							temp=0
 							break 2
