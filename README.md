@@ -22,7 +22,7 @@ If you want proper access to (and only to) the hos_data partition, run the scrip
 ## Basic usage:  
 sudo ./setup.sh
 
-If you cant run the script, add execute permission to setup.sh and Tools/shofel2/shofel2.py with `chmod +x [file]`.
+If you cant run the script, add execute permission to setup.sh, Tools/simg2img/simg2img and Tools/shofel2/shofel2.py with `chmod +x [file]`.
 
 When you didn't download from release page, but cloned the repo instead, you need to build simg2img.
 
