@@ -171,10 +171,10 @@ while (($# > 0))
 
 				echo "Converting Android sparse images to raw images. This may take a while."
 
-				./Tools/simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
+				./Tools/simg2img/simg2img "${AndroidImg}"/vendor.img "${AndroidImg}"/vendor.raw.img
 				declare android_vendor_img=${AndroidImg}/vendor.raw.img
 
-				./Tools/simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
+				./Tools/simg2img/simg2img "${AndroidImg}"/system.img "${AndroidImg}"/system.raw.img
 				declare android_system_img=${AndroidImg}/system.raw.img
 
 			elif expr match "$2" "^partitions-only$" > 0
@@ -223,8 +223,16 @@ while (($# > 0))
 			declare NoFormat=1
 			shift
 		;;
+		--cfw)
+			declare CFW=1
+			shift
+		;;
 		--fix-mbr)
 			declare FixMbr=1
+			shift
+		;;
+		--fix-mbr-properly)
+			declare FixMbr=2
 			shift
 		;;
 		*)
@@ -357,7 +365,13 @@ if [[ $FixMbr ]]
 	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 
 	declare -a PartitionsToAddToMBR=("hos_data" "emummc")
-	declare -a MBRCodesToAdd=("0C" "1C")
+
+	declare -a MBRCodesToAdd=("1C" "1C")
+
+	if (( $FixMbr==2 ))
+		then
+		declare -a MBRCodesToAdd=("0C" "1C")
+	fi
 	
 	for ((i=0;i<${#PartitionsToAddToMBR[@]};i++))
 		do
@@ -458,7 +472,6 @@ if [[ -z $FixMbr ]]
 			then
 			declare -a AndroidPiePartNames=("vendor" "LNX" "SOS" "DTB" "APP")
 			declare -a AndroidPieImages=("$android_vendor_img" "$android_boot_img" "$android_recovery_img" "$android_dtb_img" "$android_system_img")
-			
 			for ((i=0;i<${#AndroidPiePartNames[@]};i++))
 				do
 				for ((j=0;j<${#SDPartNames[@]};j++))
@@ -505,7 +518,7 @@ if [[ -z $FixMbr ]]
 	PartitionNames=("${PartitionNames[@]}" "hos_data")
 	PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "Data")
 	MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-	MBRCodes=("${MBRCodes[@]}" "0C")
+	MBRCodes=("${MBRCodes[@]}" "1C")
 
 	if [[ -z $NoFormat ]]
 		then
@@ -810,6 +823,8 @@ if [[ -z $FixMbr ]]
 		MBRCodes=("${MBRCodes[@]}" "1C")
 		PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
 
+		StartFiles=("${StartFiles[@]}" "./StartFiles/HOSEmuMMCStartFiles.zip" "./StartFiles/CFW_Atmosphere.zip")
+
 		Size=$(($Size-$emummc_sz_default))
 		if (($Size < 0))
 			then
@@ -817,6 +832,21 @@ if [[ -z $FixMbr ]]
 			exit
 		fi
 	fi
+
+	if [[ -z $NoUi ]] && [[ -z $CFW ]] && [[ -z $NoFormat ]]
+		then
+		read -p "Install Atmosphere CFW? ([Y]es/[N]o): " Input
+		if  expr match "$Input" "^[yY]$">0
+			then
+			declare CFW=1
+		fi
+	fi
+
+	if [[ $CFW ]] && (( $CFW==1 ))
+		then
+		StartFiles=("${StartFiles[@]}" "./StartFiles/CFWMMCStartFiles.zip" "./StartFiles/CFWAtmosphere.zip")
+	fi
+
 
 	#Adjust partition sizes
 

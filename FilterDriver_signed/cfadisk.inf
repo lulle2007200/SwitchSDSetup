@@ -1,0 +1,66 @@
+[Version]
+Signature="$Windows NT$"
+Class=DiskDrive
+ClassGuid={4D36E967-E325-11CE-BFC1-08002BE10318}
+Provider=%HGST%
+CatalogFile="cfadisk.cat"
+LayoutFile=layout.inf
+DriverVer=12/14/2002,1.00.0000.1
+
+[Manufacturer]
+%HGST% = cfadisk_device,ntAMD64
+
+[DestinationDirs]
+cfadisk_copyfiles=12    ; %SystemRoot%\system32\drivers
+gendisk_copyfiles=12    ; %SystemRoot%\system32\drivers
+
+[cfadisk_copyfiles]
+cfadisk.sys
+
+[gendisk_copyfiles]
+disk.sys
+
+[cfadisk_device]
+%Microdrive_devdesc% = cfadisk_install,IDE\USBSTOR\GenDisk
+
+
+
+[cfadisk_device.NTamd64]
+%Microdrive_devdesc% = cfadisk_install,IDE\USBSTOR\GenDisk
+
+
+
+[cfadisk_addreg]
+HKR,,"LowerFilters",0x00010008,"cfadisk"
+
+[cfadisk_install]
+CopyFiles=cfadisk_copyfiles,gendisk_copyfiles
+
+[cfadisk_install.HW]
+AddReg=cfadisk_addreg
+
+[cfadisk_install.Services]
+AddService=disk,2,gendisk_ServiceInstallSection
+AddService=cfadisk,,cfadisk_ServiceInstallSection
+
+[gendisk_ServiceInstallSection]
+DisplayName    = "Disk Driver"
+ServiceType    = 1
+StartType      = 0
+ErrorControl   = 1
+ServiceBinary  = %12%\disk.sys
+LoadOrderGroup = SCSI Class
+
+[cfadisk_ServiceInstallSection]
+DisplayName    = "CompactFlash Filter Driver"
+ServiceType    = 1
+StartType      = 3
+ErrorControl   = 1
+ServiceBinary  = %12%\cfadisk.sys
+LoadOrderGroup = Pnp Filter
+
+; -----------------------
+
+[Strings]
+HGST = "Hitachi"
+Microdrive_devdesc = "Transcend 64GB DIY SSD"
