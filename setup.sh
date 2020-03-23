@@ -403,13 +403,18 @@ if [[ -z $FixMbr ]]
 
 		mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 		mapfile -t SDPartitionSizes < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
-
-		if test ${SDPartNames[0]} = "hos_data"
+		
+		if [[ $SDPartNames ]]
 			then
-			if (( ${SDPartitionSizes[0]} < ($hos_data_sz_default/512) ))
+			if test ${SDPartNames[0]} = "hos_data"
 				then
-				temp=0
+				if (( ${SDPartitionSizes[0]} < ($hos_data_sz_default/512) ))
+					then
+					temp=0
+				fi
 			fi
+		else
+			temp=0
 		fi
 				
 		
