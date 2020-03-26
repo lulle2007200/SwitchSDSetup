@@ -13,18 +13,18 @@ If doing so, you have to force power off the switch (hold power button for like 
 - the following programs must be installed (usually installed by default):
 - gdisk, fdisk, sgdisk, sfdisk, parted, dd, mount, umount, losetup, awk, rm, rmdir, resize2fs, stat, mkfs.vfat, mkfs.ext4, unzip, printf, cp, echo, test, expr, partprobe, python3, python3-usb
 
-## Access hos_data partition from Windows
-If you connect the SD card to a Windows system, Windows will throw a bunch of errors at you and eventually gives you access to the partition.  
-The EmuMMC partition will appear aswell and seems to be empty. MAKE SURE TO NOT WRITE ANYTHING TO THAT PARTITION. DONT CLICK "Scan and fix removable disk".
-
-If you want proper access to (and only to) the hos_data partition, run the script with --fix-mbr-properly, set Windows system date to 01.01.2014, plug in the SD card, go to device manager, find the SD card, right click and select "update driver", click "Browse for driver software on your computer", click "Let me pick from a list of device drivers on my computer", click "have disk", browse to the cfadisk.inf file of the filter driver and install the driver. Reset Windows system date. If Windows does not assign a drive letter automatically, do it manually from from Windows disk manager (right click the fat32 partition, assign drive letter).
-
 ## Basic usage:  
 sudo ./setup.sh
 
 If you cant run the script, add execute permission to setup.sh, Tools/simg2img/simg2img and Tools/shofel2/shofel2.py with `chmod +x [file]`.
 
 When you didn't download from release page, but cloned the repo instead, you need to build simg2img.
+
+## Access hos_data partition from Windows
+If you connect the SD card to a Windows system, Windows will throw a bunch of errors at you and eventually gives you access to the partition.  
+The EmuMMC partition will appear aswell and seems to be empty. MAKE SURE TO NOT WRITE ANYTHING TO THAT PARTITION. DONT CLICK "Scan and fix removable disk".
+
+If you want proper access to (and only to) the hos_data partition, run the script with --fix-mbr-properly, set Windows system date to 01.01.2014, plug in the SD card, go to device manager, find the SD card, right click and select "update driver", click "Browse for driver software on your computer", click "Let me pick from a list of device drivers on my computer", click "have disk", browse to the cfadisk.inf file of the filter driver and install the driver. Reset Windows system date. If Windows does not assign a drive letter automatically, do it manually from from Windows disk manager (right click the fat32 partition, assign drive letter).
 
 ## Optional command line options  
 ### --android [value]  
