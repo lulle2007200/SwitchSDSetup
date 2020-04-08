@@ -70,7 +70,12 @@ declare mda_sz_default=$((16*1024*1024))
 declare cac_sz_default=$((700*1024*1024))
 declare uda_sz_default=$((1*1024*1024*1024))
 
-declare Help="Optional command line options\n \
+declare Help="All command line options are optional\n \
+The script is interactive. If an option is not set, it will ask you.\n \
+E.g. if --device is not set, the script will list all available storage devices, you can choose one.\n \
+To flash images, use the --l4t and --android options.\n \
+\n \
+Command line options:\n \
 --android '[value]'\n \
 \tValue can be\n \
 \t- a path to an Android Oreo image named android-xxGb.img.\n \
@@ -109,7 +114,17 @@ Advanced options:\n \
 --no-startfiles\n \
 \tIf this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).\n \
 --no-format\n \
-\tIf this option is set, the script will not format the SD card and instead just flash the provided files. Required partitions must already be present and large enough."
+\tIf this option is set, the script will not format the SD card and instead just flash the provided files. Required partitions must already be present and large enough.\n \
+--fix-mbr\n \
+\tIf this option is set, the script will attempt to fix the hybrid MBR.\n \
+--fix-mbr-properly
+\tSame as --fix-mbr, but does it properly. Hos_data partition wont be accessible from Windows unless you use the filter driver (see github repo).\n \
+--no-format\n \
+\tIf this option is set, the script wont format the SD card and will only flash the provided images. The required partitions must be already present and big enough.\n \
+--cfw\n \
+\The script will install Atmosphere CFW.\n \
+--no-startfiles\n \
+\tThe script wont copy any files (except for those added with --f option) to the hos_data partition."
 
 echo -e "SwitchSDSetup Script - use --help for a list of available options.\nMore information here:  github.com/lulle2007200/SwitchSDSetup\n"
 
@@ -362,7 +377,7 @@ if [[ $FixMbr ]]
 
 	declare SDPartTableStartLine=$(echo "$SDPartTable" | awk '{if(!NF){print NR}}')
 
-	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk -v ptsl=$SDPartTableStartLine'{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 
 	declare -a PartitionsToAddToMBR=("hos_data" "emummc")
 
@@ -401,8 +416,8 @@ if [[ -z $FixMbr ]]
 
 		declare SDPartTableStartLine=$(echo "$SDPartTable" | awk '{if(!NF){print NR}}')
 
-		mapfile -t SDPartNames < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
-		mapfile -t SDPartitionSizes < <(echo "$SDPartTable" | awk '{if (NR>$SDPartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
+		mapfile -t SDPartNames < <(echo "$SDPartTable" | awk -v ptsl=$SDPartTableStartLine '{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+		mapfile -t SDPartitionSizes < <(echo "$SDPartTable" | awk -v ptsl=$SDPartTableStartLine '{if (NR>ptsl && (NF-3)>0){print int($ (NF-3));}}')
 		
 		if [[ $SDPartNames ]]
 			then
@@ -428,7 +443,7 @@ if [[ -z $FixMbr ]]
 
 					declare L4TPartTableStartLine=$(echo "$L4TPartTable" | awk '{if(!NF){print NR}}')
 			
-					mapfile -t L4TPartitionSizes < <(echo "$L4TPartTable" | awk '{if (NR>$L4TPartTableStartLine && (NF-1)>0){print int($ (NF-1));}}')
+					mapfile -t L4TPartitionSizes < <(echo "$L4TPartTable" | awk -v ptsl=$L4TPartTableStartLine '{if (NR>ptsl && (NF-1)>0){print int($ (NF-1));}}')
 
 					if (( ${SDPartitionSizes[$i]} < $(((${L4TPartitionSizes[1]}+2047)/2048*2048)) ))
 						then
@@ -451,8 +466,8 @@ if [[ -z $FixMbr ]]
 
 			declare AndroidPartTableStartLine=$(echo "$AndroidPartTable" | awk '{if(!NF){print NR}}')
 
-			mapfile -t AndroidPartNames < <(echo "$AndroidPartTable" | awk '{if (NR>$PartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
-			mapfile -t AndroidPartitionSizes < <(echo "$AndroidPartTable" | awk '{if (NR>$PartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
+			mapfile -t AndroidPartNames < <(echo "$AndroidPartTable" | awk -v ptsl=$AndroidPartTableStartLine '{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+			mapfile -t AndroidPartitionSizes < <(echo "$AndroidPartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-3)>0){print int($ (NF-3));}}')
 
 			for ((j=1;j<${#AndroidPartNames[@]}-1;j++))
 				do
@@ -679,9 +694,9 @@ if [[ -z $FixMbr ]]
 
 		declare PartTableStartLine=$(echo "$PartTable" | awk '{if(!NF){print NR}}')
 
-		mapfile -t Names < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
-		mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-3)>0){print int($ (NF-3));}}')
-		mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>$PartTableStartLine && (NF-5)>0){print int($ (NF-5));}}')
+		mapfile -t Names < <(echo "$PartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+		mapfile -t PartitionSizes < <(echo "$PartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-3)>0){print int($ (NF-3));}}')
+		mapfile -t StartSectors < <(echo "$PartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-5)>0){print int($ (NF-5));}}')
 
 		declare PartNo
 		
@@ -715,7 +730,16 @@ if [[ -z $FixMbr ]]
 		
 		if [[ -z $NoStartfiles ]]
 			then
-			PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"" "mkdir -p ./LoopDeviceMount ./DataPartitionMount" "mount \$LoopDevice ./LoopDeviceMount" "mount ${Device}${PartPrefix}1 ./DataPartitionMount" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"" "umount ${Device}${PartPrefix}1" "umount \$LoopDevice" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
+			PostPartCmds=("${PostPartCmds[@]}" "declare LoopDevice=$(losetup -f)" "losetup -o $temp \$LoopDevice \"$AndroidImg\"")
+			PostPartCmds=("${PostPartCmds[@]}" "mkdir -p ./LoopDeviceMount ./DataPartitionMount")
+			PostPartCmds=("${PostPartCmds[@]}" "mount \$LoopDevice ./LoopDeviceMount")
+			PostPartCmds=("${PostPartCmds[@]}" "mount ${Device}${PartPrefix}1 ./DataPartitionMount")
+			PostPartCmds=("${PostPartCmds[@]}" "cp -f -R ./LoopDeviceMount/switchroot_android ./DataPartitionMount")
+			PostPartCmds=("${PostPartCmds[@]}" "mkdir -p ./DataPartitionMount/bootloader/ini && cp -f ./LoopDeviceMount/bootloader/ini/00-android.ini ./DataPartitionMount/bootloader/ini/00-android.ini")
+			PostPartCmds=("${PostPartCmds[@]}" "mkdir -p ./DataPartitionMount/bootloader/res && cp -f \"./LoopDeviceMount/bootloader/res/Switchroot Android.bmp\" \"./DataPartitionMount/bootloader/res/Switchroot Android.bmp\"")
+			PostPartCmds=("${PostPartCmds[@]}" "umount ./DataPartitionMount")
+			PostPartCmds=("${PostPartCmds[@]}" "umount \$LoopDevice")
+			PostPartCmds=("${PostPartCmds[@]}" "rmdir ./LoopDeviceMount ./DataPartitionMount" "losetup -d \$LoopDevice")
 		fi
 
 		if (($Size < 0))
@@ -746,9 +770,11 @@ if [[ -z $FixMbr ]]
 		declare PartNo
 		
 		declare PartTable=$(sfdisk -d "${L4TImg}")
+
+		declare PartTableStartLine=$(echo "$PartTable" | awk '{if(!NF){print NR}}')
 		
-		mapfile -t PartitionSizes < <(echo "$PartTable" | awk '{if (NR>5 && (NF-1)>0){print int($ (NF-1));}}')
-		mapfile -t StartSectors < <(echo "$PartTable" | awk '{if (NR>5 && (NF-3)>0){print int($ (NF-3));}}')
+		mapfile -t PartitionSizes < <(echo "$PartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-1)>0){print int($ (NF-1));}}')
+		mapfile -t StartSectors < <(echo "$PartTable" | awk -v ptsl=$PartTableStartLine '{if (NR>ptsl && (NF-3)>0){print int($ (NF-3));}}')
 
 		temp=$(((${PartitionSizes[1]}+2047)/2048*2048*512))	
 		Size=$(($Size-$temp))
@@ -907,6 +933,10 @@ if [[ -z $NoFormat ]] && [[ -z $FixMbr ]]
 		sgdisk -n $(($i+1)):0:+$((${Partitions[$i]}/1024))K $Device
 		sgdisk -c $(($i+1)):${PartitionNames[$i]} $Device
 	done
+	
+	declare UUID=$(uuidgen)
+	UUID="${UUID:0:14}00${UUID:16:38}"
+	sgdisk -u 1:$UUID $Device
 fi
 
 if [[ -z $NoFormat ]] || [[ $FixMbr ]]
@@ -950,12 +980,12 @@ if [[ -z $FixMbr ]]
 	fi
 
 	mkdir -p "./DataPartitionMount"
-	mount "${Device}1" "./DataPartitionMount"
+	mount "${Device}${PartPrefix}1" "./DataPartitionMount"
 	for ((i=0;i<${#AdditionalStartFiles[@]};i++))
 		do
 		unzip -o "${AdditionalStartFiles[$i]}" -d "./DataPartitionMount"
 	done
-	umount "${Device}1"
+	umount "./DataPartitionMount"
 	rmdir "./DataPartitionMount"
 fi
 
