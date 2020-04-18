@@ -377,7 +377,7 @@ if [[ $FixMbr ]]
 
 	declare SDPartTableStartLine=$(echo "$SDPartTable" | awk '{if(!NF){print NR}}')
 
-	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk -v ptsl=$SDPartTableStartLine'{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
+	mapfile -t SDPartNames < <(echo "$SDPartTable" | awk -v ptsl=$SDPartTableStartLine '{if (NR>ptsl && (NF-1)>0){print substr($NF, 7, length($NF)-7);}}')
 
 	declare -a PartitionsToAddToMBR=("hos_data" "emummc")
 
