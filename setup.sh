@@ -581,10 +581,6 @@ if [[ -z $FixMbr ]]
 		if [[ -z $NoStartfiles ]]
 			then
 			StartFiles=("${StartFiles[@]}" "./StartFiles/AndroidPieStartFiles.zip")
-			if [[ $TWRP ]] && (( $TWRP==1 ))
-			then
-				StartFiles=("${StartFiles[@]}" "./StartFiles/TWRPBootScr.zip")
-			fi
 		fi
 
 		declare temp

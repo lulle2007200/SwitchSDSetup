@@ -1,30 +1,36 @@
 # What this script does
 
-The script sets up the partitions in a way that the SD card remains usable with Horizon OS without the need to format it gain.  
-You can provide an Android and/or a L4t Ubuntu image with the command line options (see below) and the script will automatically set up partitions and copy the content of the images to the right partitions and the necessary files to boot the images to the data partition.  
+This script sets up your SD card for the use of Android, L4T Ubuntu, emummc and makes sure that the SD card is still usable with HOS.
+You can provide an Android and/or L4t Ubuntu image and the script will automatically flash those. If you dont provide images, you get the option to just create the partitions for Android and/or L4T Ubuntu.
+The script will automatically add the necessary files to boot the images. 
 You can also choose to add a partition for EmuMMC.  
-When there is free space left on the SD card, you can extend each partition individually (realistically though you would only want to extend the L4T, Android user data and maybe the android system partition), all remaining free space will get assigned to the data partition. 
+When there is free space left on the SD card, you can extend each partition individually (realistically though you would only want to extend the L4T and Android user data partition), all remaining free space will get assigned to the data partition.
 You can connect a switch in rcm mode to the pc and the script can directly write to the SD card that is inserted into it  (aka use switch as SD card reader). No need to ever remove the SD card from your switch again.
 If doing so, you have to force power off the switch (hold power button for like 10s) after the script is done.  
 
 
 ## Requirements
-- Linux distribution of your choice with bash, live CD/USB stick is sufficient
+- Linux distribution of your choice with bash, live CD/USB stick is sufficient. Virtual machine with USB passthrough should work aswell, but you are on your own then.
 - the following programs must be installed (usually installed by default):
 - gdisk, fdisk, sgdisk, sfdisk, parted, dd, mount, umount, losetup, awk, rm, rmdir, resize2fs, stat, mkfs.vfat, mkfs.ext4, unzip, printf, cp, echo, test, expr, partprobe, python3, python3-usb
 
 ## Basic usage:  
-sudo ./setup.sh
+`sudo ./setup.sh`
+`sudo ./setup.sh --android "path/to/android` to flash the given android image
+`sudo ./setup.sh --l4t "path/to/l4t` to flash the given l4t image
+`sudo ./setup.sh --l4t "path/to/l4t --android "path/to/android` to flash both images
 
-If you cant run the script, add execute permission to setup.sh, Tools/simg2img/simg2img and Tools/shofel2/shofel2.py with `chmod +x [file]`.
+You dont need to set any of the optional command line options, the script is interactive and will ask you, which device to use, wether or not to create an emummnc partition etc.
 
-When you didn't download from release page, but cloned the repo instead, you need to build simg2img.
+If you can't run the script, add execute permission to the files setup.sh, Tools/simg2img/simg2img and Tools/shofel2/shofel2.py with `chmod +x [file]`.
+
+If some dependencies are missing, the script will tell you. Install the missing package with your package manager, on Ubuntu you would run `sudo apt install [missing package]`.
 
 ## Access hos_data partition from Windows
 If you connect the SD card to a Windows system, Windows will throw a bunch of errors at you and eventually gives you access to the partition.  
 The EmuMMC partition will appear aswell and seems to be empty. MAKE SURE TO NOT WRITE ANYTHING TO THAT PARTITION. DONT CLICK "Scan and fix removable disk".
 
-If you want proper access to (and only to) the hos_data partition, run the script with --fix-mbr-properly, set Windows system date to 01.01.2014, plug in the SD card, go to device manager, find the SD card, right click and select "update driver", click "Browse for driver software on your computer", click "Let me pick from a list of device drivers on my computer", click "have disk", browse to the cfadisk.inf file of the filter driver and install the driver. Reset Windows system date. If Windows does not assign a drive letter automatically, do it manually from from Windows disk manager (right click the fat32 partition, assign drive letter).
+If you want proper access to (and only to) the hos_data partition, run the script with --fix-mbr-properly, set Windows system date to 01.01.2014, plug in the SD card, go to device manager, find the SD card, right click and select "update driver", click "Browse for driver software on your computer", click "Let me pick from a list of device drivers on my computer", click "have disk", browse to the cfadisk.inf file of the filter driver and install the driver. Reset Windows system date. You only have to do that once. Next time plug in the SD card, Windows will automatically mount the hos_data partition without throwing errors.
 
 ## Optional command line options  
 ### --android [value]  
@@ -42,10 +48,6 @@ Value can be
 If the path contains spaces, put it in double quotes.  
 If you dont provide this option, the script will ask you, wether or to add partitions for L4T Ubuntu.  
 
-### --f [value]  
-Value can be  
-- a path to a zip file. The content of the provided zip file will get copied to the data partition (hos_data) automatically. Use --f [value] multiple times to add more than one zip file. 
-
 ### --cfw
 Installs Atmosphere CFW.
 
@@ -59,7 +61,7 @@ If you dont set this options, the script will ask you, wether or not to add an E
 ### --device [value]  
 Value can be  
 - The path to the device you want to use. 
-- switch. If value is switch, the script will try to use the SD card inserted into the switch in rcm mode connected to the pc. If no SD card is present in the connected switch or if no switch in rcm mode is found, the script will abort.
+- switch. If value is switch, the script will look for a switch in RCM mode attached to the pc and try to use the inserted SD card. If no SD card is inserted or it fails to detect a switch in RCM mode, the script will abort.
 If you dont provide this option, the script will list all available storage devices. You can choose the device you want to use.  
 
 ### --no-format
@@ -69,7 +71,8 @@ Not compatible with --l4t partitions-only, --emummc and --android partitions-onl
 ## Advanced options:  
 ### --no-ui  
 If this option is set, there will be no user interaction. THERE WILL BE NO WARNING ABOUT DATALOSS. YOU WILL NOT BE ASKED, IF YOU WANT TO CONTINUE, BEFORE THE DEVICE IS FORMATTED.  
-When --no-ui is set, you must provide a device using --device.  
+When --no-ui is set, you must provide a device using --device.
+Useful if you intend to run this script form another script.  
 
 ### --no-startfiles  
 If this option is set, the script will not copy any files necessary to boot horizon, l4t or android to the data partition (hos_data).
@@ -82,6 +85,11 @@ Doesn't work with any other option.
 ### --fix-mbr-properly
 Same as --fix-mbr. Sets up the mbr the proper way. Windows wont detect the hos_data partition due to some weird behaviour of the windows driver for removable storage devices.  
 Use this, if you use the filter driver (makes the sd card appear as hard drive). No errors - it just works as intended.
+
+
+### --f [value]  
+Value can be  
+- a path to a zip file. The content of the provided zip file will get copied to the data partition (hos_data) automatically. Use --f [value] multiple times to add more than one zip file. 
 
 
 ## Usage example:  
