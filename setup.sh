@@ -222,6 +222,32 @@ while (($# > 0))
 		;;
 		--emummc)
 			declare Emummc=1
+			if expr match "${2}" "^hidden$" > 0
+				then
+				declare Emummc_hidden=1
+				shift
+			fi
+			if expr match "${2}" "^[0-9]*$" > 0
+				then
+				emummc_sz_default=$((${2}*1024*1024))
+				shift
+			fi
+			if expr match "${2}" "^.*emummc.img$" > 0
+				then
+				if test -f "${2}"
+					then
+					Emummc=2
+					declare Emummc_img=${2}
+					declare FileSize=$(stat -c%s "$Emummc_img")
+					if (( $emummc_sz_default < $FileSize ))
+						then
+						emummc_sz_default = $(( ($FileSize+(1024*1024-1))/(1024*1024)*(1024*1024) ))
+					fi
+				else
+					echo "Invalid image: ${2}, ignoring."
+				fi
+				shift
+			fi
 			shift
 		;;
 		--device)
@@ -841,15 +867,27 @@ if [[ -z $FixMbr ]]
 	fi
 		
 
-	if [[ $Emummc ]] && (( $Emummc==1 ))
+	if [[ $Emummc ]] && ((( $Emummc==1 )) || (( $Emummc==2 )))
 		then
 		Partitions=("${Partitions[@]}" $emummc_sz_default)
 		PartitionNames=("${PartitionNames[@]}" "emummc")
 		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "EmuMMC")
-		MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
-		MBRCodes=("${MBRCodes[@]}" "1C")
+		If [[ Emummc_hidden ]] && (($Emummc_hidden==1))
+			then
+			MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
+			MBRCodes=("${MBRCodes[@]}" "1C")
+		fi
 		PostPartCmds=("${PostPartCmds[@]}" "mkfs.vfat -F 32 ${Device}${PartPrefix}${#Partitions[@]}" "sgdisk -t ${#Partitions[@]}:0700 $Device")
-
+		
+		if (( $Emummc==2 ))
+			then
+			declare FileSize=$(stat -c%s "$Emummc_img")
+			PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=1M if=\"$Emummc_img\" of=${Device}${PartPrefix}${#Partitions[@]} count=$((${FileSize}/(1024*1024))) status=progress")
+			PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=/dev/zero of=${Device}${PartPrefix}${#Partitions[@]} count=$(((${emummc_sz_default}-(${FileSize}/(1024*1024)*(1024*1024)))/512)) seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) status=progress")
+			PostPartCmds=("${PostPartCmds[@]}" "dd oflag=sync bs=512 if=\"$Emummc_img\" of=${Device}${PartPrefix}${#Partitions[@]} status=progress seek=$((${FileSize}/(1024*1024)*(1024*1024)/512)) skip=$((${FileSize}/(1024*1024)*(1024*1024)/512)) count=$((($FileSize-(${FileSize}/(1024*1024)*(1024*1024)))/512))")
+		fi
+			
+			
 		StartFiles=("${StartFiles[@]}" "./StartFiles/HOSEmuMMCStartFiles.zip" "./StartFiles/CFW_Atmosphere.zip")
 
 		Size=$(($Size-$emummc_sz_default))
