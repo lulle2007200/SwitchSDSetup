@@ -872,7 +872,7 @@ if [[ -z $FixMbr ]]
 		Partitions=("${Partitions[@]}" $emummc_sz_default)
 		PartitionNames=("${PartitionNames[@]}" "emummc")
 		PartitionFriendlyNames=("${PartitionFriendlyNames[@]}" "EmuMMC")
-		If [[ Emummc_hidden ]] && (($Emummc_hidden==1))
+		If [[ -z $Emummc_hidden ]]
 			then
 			MBRPartitions=("${MBRPartitions[@]}" ${#Partitions[@]})
 			MBRCodes=("${MBRCodes[@]}" "1C")
