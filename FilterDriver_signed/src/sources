@@ -1,9 +1,0 @@
-TARGETNAME=cfadisk
-TARGETPATH=obj
-TARGETTYPE=DRIVER
-
-INCLUDES=.
-
-SOURCES=cfadisk.c \
-        cfadisk.rc
-
