@@ -28,7 +28,7 @@ If some dependencies are missing, the script will tell you. Install the missing 
 
 ## Access hos_data partition from Windows
 If you connect the SD card to a Windows system, Windows will throw a bunch of errors at you and eventually gives you access to the partition.  
-The EmuMMC partition will appear aswell and seems to be empty. MAKE SURE TO NOT WRITE ANYTHING TO THAT PARTITION. DONT CLICK "Scan and fix removable disk".
+The EmuMMC partition will appear aswell and seems to be empty. MAKE SURE TO NOT WRITE ANYTHING TO THAT PARTITION. DPONT CLICK "Scan and fix removable disk".
 
 If you want proper access to (and only to) the hos_data partition, run the script with --fix-mbr-properly, set Windows system date to 01.01.2014, plug in the SD card, go to device manager, find the SD card, right click and select "update driver", click "Browse for driver software on your computer", click "Let me pick from a list of device drivers on my computer", click "have disk", browse to the cfadisk.inf file of the filter driver and install the driver. Reset Windows system date. You only have to do that once. Next time plug in the SD card, Windows will automatically mount the hos_data partition without throwing errors.
 
@@ -64,7 +64,7 @@ If a path to an image is set, it will flash that image to the emummc partition (
 Examples:  
 `--emummc hidden 10000 ./emummc.img` creates a hidden emummc partition of size 10000mb and flashes the given image  
 `--emummc 100000 hidden` creates a hidden emummc partition of size 10000mb, doesn't flash an image  
-`--emummc ./emummc` creates an emummc partition and flashes the given image  
+`--emummc ./emummc.img` creates an emummc partition and flashes the given image  
 
 ### --device [value]  
 Value can be  
